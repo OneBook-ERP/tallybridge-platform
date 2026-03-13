@@ -1,0 +1,13 @@
+{
+  "name": "tallybridge-platform",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:cloud": "npm run dev --workspace=apps/cloud",
+    "build:cloud": "npm run build --workspace=apps/cloud",
+    "migrate": "npm run migrate --workspace=apps/cloud"
+  }
+}
