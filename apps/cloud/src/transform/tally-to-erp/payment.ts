@@ -76,8 +76,8 @@ export function transformPayment(voucher: TallyVoucher, config: CompanyConfig): 
         party_type: partyType,
         party: sanitiseName(voucher.partyLedgerName),
         company: config.erpnextCompany,
-        paid_from: isReceipt ? 'Debtors - ' + shortCo(config.erpnextCompany) : bankAccount,
-        paid_to: isReceipt ? bankAccount : 'Creditors - ' + shortCo(config.erpnextCompany),
+        paid_from: isReceipt ? debtorsAccount(config) : bankAccount,
+        paid_to: isReceipt ? bankAccount : creditorsAccount(config),
         paid_from_account_currency: config.currency,
         paid_to_account_currency: config.currency,
         paid_amount: amount,
@@ -88,11 +88,31 @@ export function transformPayment(voucher: TallyVoucher, config: CompanyConfig): 
         reference_date: referenceDate,
         remarks: voucher.narration || undefined,
         references,
+        cost_center: config.costCenter || undefined,
+        company_gstin: config.companyGstin || undefined,
         custom_tally_guid: voucher.guid,
         custom_sync_source: 'TALLYBRIDGE',
     }
 
     return { success: true, doc, warnings: [] }
+}
+
+/** Get Debtors account from config mappings, falling back to abbreviation-based name */
+function debtorsAccount(config: CompanyConfig): string {
+    return (
+        config.accountMappings['Sundry Debtors'] ??
+        config.accountMappings['Debtors'] ??
+        `Debtors - ${config.erpnextAbbr ?? shortCo(config.erpnextCompany)}`
+    )
+}
+
+/** Get Creditors account from config mappings, falling back to abbreviation-based name */
+function creditorsAccount(config: CompanyConfig): string {
+    return (
+        config.accountMappings['Sundry Creditors'] ??
+        config.accountMappings['Creditors'] ??
+        `Creditors - ${config.erpnextAbbr ?? shortCo(config.erpnextCompany)}`
+    )
 }
 
 /** Short company suffix for default AR/AP accounts e.g. "AC" from "Acme Corp" */

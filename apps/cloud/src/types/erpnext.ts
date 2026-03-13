@@ -22,6 +22,8 @@ export interface ERPNextSalesInvoice {
     is_inter_state: 0 | 1
     gst_category: GSTCategory
     customer_gstin?: string
+    company_gstin?: string
+    company_address?: string
     is_rcm_applicable: 0 | 1
     remarks?: string
     items: SalesInvoiceItem[]
@@ -79,6 +81,8 @@ export interface ERPNextPurchaseInvoice {
     is_inter_state: 0 | 1
     gst_category: GSTCategory
     supplier_gstin?: string
+    company_gstin?: string
+    company_address?: string
     is_rcm_applicable: 0 | 1
     remarks?: string
     items: PurchaseInvoiceItem[]
@@ -129,6 +133,8 @@ export interface ERPNextPaymentEntry {
     reference_date?: string
     remarks?: string
     references: PaymentReference[]
+    cost_center?: string
+    company_gstin?: string
     custom_tally_guid?: string
     custom_sync_source?: 'TALLYBRIDGE'
 }
@@ -154,6 +160,7 @@ export interface ERPNextJournalEntry {
     accounts: JournalAccount[]
     total_debit: number
     total_credit: number
+    company_gstin?: string
     custom_tally_guid?: string
     custom_sync_source?: 'TALLYBRIDGE'
 }

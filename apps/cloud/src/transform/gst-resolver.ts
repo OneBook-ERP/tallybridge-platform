@@ -10,8 +10,8 @@
  *  - Composition scheme detection (GSTIN 2nd char = '4')
  *  - B2C / Unregistered / Overseas classification
  */
-import type { TallyVoucher, TallyInventoryEntry, TaxLine, GSTCategory, CompanyConfig } from '../types'
-import { resolveAccount, isTransformError, type ResolvedAccount } from './account-resolver'
+import type { TallyVoucher, TaxLine, GSTCategory, CompanyConfig } from '../types'
+import { resolveAccount, isTransformError } from './account-resolver'
 
 // Map of Indian state codes → state names (used for inter-state detection)
 const STATE_CODES: Record<string, string> = {

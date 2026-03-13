@@ -36,6 +36,7 @@ export interface ConflictStrategy {
 export interface CompanyConfig {
     companyId: string
     erpnextCompany: string // ERPNext company name (for items)
+    erpnextAbbr?: string // ERPNext company abbreviation (e.g. "ZP") — used for account suffixes
     companyGstin?: string // Company GSTIN — used to derive state for inter-state GST
     defaultState?: string // Fallback state when GSTIN is not set (e.g. "Tamil Nadu")
     currency: string // "INR"

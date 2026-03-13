@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 /**
  * Migration runner — reads numbered .sql files from the migrations/ directory
  * and executes them in order using a schema_migrations tracking table.

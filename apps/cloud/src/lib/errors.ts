@@ -79,6 +79,7 @@ export function errorHandler(
     }
 
     // Unexpected error — return 500
+    // eslint-disable-next-line no-console
     console.error(error)
     reply.code(500).send({ error: 'INTERNAL_ERROR', message: 'An unexpected error occurred' })
 }

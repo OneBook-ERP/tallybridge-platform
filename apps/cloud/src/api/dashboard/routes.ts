@@ -94,6 +94,64 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
         return { entries: rows }
     })
 
+    // POST /dashboard/reprocess-exceptions — resolve open exceptions that now have mappings
+    app.post<{ Body: { companyId?: string; errorCode?: string } }>('/dashboard/reprocess-exceptions', async (req) => {
+        const { companyId, errorCode } = req.body ?? {}
+        const code = errorCode ?? 'UNMAPPED_LEDGER'
+
+        // Get the account mappings for the company
+        let resolvedCount = 0
+        if (companyId) {
+            const [profile] = await sql<{ account_mappings: Record<string, string> }[]>`
+                    SELECT account_mappings FROM config_profiles WHERE company_id = ${companyId}
+                `
+            const mappings = profile?.account_mappings ?? {}
+
+            // Find open exceptions matching the error code
+            const openExceptions = await sql<{ id: string; error_message: string; document_ref: string }[]>`
+                    SELECT id, error_message, document_ref FROM exception_register
+                    WHERE company_id = ${companyId}
+                      AND error_code = ${code}
+                      AND resolved_at IS NULL
+                `
+
+            const toResolve: string[] = []
+            for (const exc of openExceptions) {
+                // Extract ledger name from error_message: 'Tally ledger "X" has no...'
+                const match = exc.error_message.match(/Tally ledger "([^"]+)"/)
+                const ledgerName = match?.[1]
+                if (ledgerName && mappings[ledgerName]) {
+                    toResolve.push(exc.id)
+                }
+            }
+
+            if (toResolve.length > 0) {
+                await sql`
+                        UPDATE exception_register
+                        SET resolved_at = now(), resolved_by = 'system:reprocess'
+                        WHERE id = ANY(${toResolve})
+                    `
+                resolvedCount = toResolve.length
+            }
+
+            logger.info(
+                { companyId, code, total: openExceptions.length, resolved: resolvedCount },
+                'Reprocessed exceptions',
+            )
+        } else {
+            // No companyId — bulk resolve all that match
+            const result = await sql`
+                    UPDATE exception_register
+                    SET resolved_at = now(), resolved_by = 'system:reprocess'
+                    WHERE error_code = ${code} AND resolved_at IS NULL
+                    RETURNING id
+                `
+            resolvedCount = result.length
+        }
+
+        return { ok: true, resolved: resolvedCount, errorCode: code }
+    })
+
     // GET /dashboard/data-comparison?companyId=... — Tally vs ERPNext document counts
     app.get<{ Querystring: { companyId?: string } }>('/dashboard/data-comparison', async (req) => {
         const { companyId } = req.query

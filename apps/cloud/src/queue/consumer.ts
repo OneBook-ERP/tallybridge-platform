@@ -37,22 +37,27 @@ async function loadConfig(companyId: string): Promise<CompanyConfigWithCreds | n
     const [company] = await sql<
         {
             erpnext_company: string
+            erpnext_abbr: string | null
             erpnext_url: string
             erpnext_api_key: string
             erpnext_api_secret: string
         }[]
     >`
-    SELECT erpnext_company, erpnext_url, erpnext_api_key, erpnext_api_secret
+    SELECT erpnext_company, erpnext_abbr, erpnext_url, erpnext_api_key, erpnext_api_secret
     FROM companies WHERE id = ${companyId}
   `
 
     return {
         companyId,
         erpnextCompany: company?.erpnext_company ?? '',
+        erpnextAbbr: company?.erpnext_abbr ?? undefined,
         erpnextUrl: company?.erpnext_url ?? '',
         erpnextApiKey: company?.erpnext_api_key ?? '',
         erpnextApiSecret: company?.erpnext_api_secret ?? '',
         currency: 'INR',
+        costCenter: `Main - ${company?.erpnext_abbr ?? 'CPT'}`,
+        companyGstin: '33AABCZ2616B1ZV',
+        defaultState: 'Tamil Nadu',
         accountMappings: row.account_mappings ?? {},
         gstLedgerMappings: {
             output_cgst: row.gst_ledger_mappings?.output_cgst ?? '',
@@ -82,11 +87,12 @@ export function startSyncWorker(): Worker<SyncJobData, void, SyncJobName> {
                 return
             }
 
-            if (recordType !== 'voucher') {
-                logger.info(
-                    { companyId, recordType, count: records.length },
-                    'Master data batch — skipping (engine handles vouchers only)',
-                )
+            if (recordType === 'ledger') {
+                await processMasterData(companyId, 'ledger', records)
+                return
+            }
+            if (recordType === 'stockItem') {
+                await processMasterData(companyId, 'stockItem', records)
                 return
             }
 
@@ -124,6 +130,91 @@ export function startSyncWorker(): Worker<SyncJobData, void, SyncJobName> {
     worker.on('completed', (job) => logger.info({ jobId: job.id }, 'sync-jobs completed'))
     worker.on('failed', (job, err) => logger.error({ jobId: job?.id, err }, 'sync-jobs failed'))
     return worker
+}
+
+// ── Helper: process master data (ledgers + stock items) ──────────────────────
+async function processMasterData(
+    companyId: string,
+    type: 'ledger' | 'stockItem',
+    records: Record<string, unknown>[],
+): Promise<void> {
+    let upserted = 0
+
+    for (const raw of records) {
+        try {
+            if (type === 'ledger') {
+                const name = (raw.Name ?? raw.name ?? raw.NAME ?? '') as string
+                if (!name) continue
+
+                const parent = (raw.Parent ?? raw.parent ?? raw.PARENT ?? '') as string
+                const group = (raw.Group ?? raw.group ?? raw.GROUP ?? '') as string
+                const gstin = (raw.GSTIN ?? raw.Gstin ?? raw.gstin ?? '') as string
+                const isParty = (raw.IsPartyLedger ?? raw.isPartyLedger ?? raw.ISPARTYLEDGER ?? false) as boolean
+                const openBal =
+                    parseFloat(String(raw.OpeningBalance ?? raw.openingBalance ?? raw.OPENINGBALANCE ?? 0)) || 0
+
+                // Classify ledger type from Tally group hierarchy
+                const ledgerType = classifyLedger(group, parent)
+
+                await sql`
+                    INSERT INTO ledger_masters (company_id, tally_name, tally_parent, tally_group, opening_balance, gstin, is_party_ledger, ledger_type, raw_data, synced_at)
+                    VALUES (${companyId}, ${name}, ${parent}, ${group}, ${openBal}, ${gstin || null}, ${isParty}, ${ledgerType}, ${raw}, now())
+                    ON CONFLICT (company_id, tally_name)
+                    DO UPDATE SET tally_parent = EXCLUDED.tally_parent, tally_group = EXCLUDED.tally_group,
+                                  opening_balance = EXCLUDED.opening_balance, gstin = EXCLUDED.gstin,
+                                  is_party_ledger = EXCLUDED.is_party_ledger, ledger_type = EXCLUDED.ledger_type,
+                                  raw_data = EXCLUDED.raw_data, synced_at = now()
+                `
+                upserted++
+            } else {
+                const name = (raw.Name ?? raw.name ?? raw.NAME ?? '') as string
+                if (!name) continue
+
+                const parent = (raw.Parent ?? raw.parent ?? raw.PARENT ?? '') as string
+                const uom = (raw.BaseUnits ?? raw.baseUnits ?? raw.BASEUNITS ?? raw.UOM ?? raw.uom ?? '') as string
+                const hsn = (raw.HSNCode ?? raw.hsnCode ?? raw.HSNCODE ?? '') as string
+                const openQty = parseFloat(String(raw.OpeningBalance ?? raw.openingBalance ?? raw.OpeningQty ?? 0)) || 0
+                const openVal = parseFloat(String(raw.OpeningValue ?? raw.openingValue ?? 0)) || 0
+
+                await sql`
+                    INSERT INTO stock_item_masters (company_id, tally_name, tally_parent, uom, hsn_code, opening_qty, opening_value, raw_data, synced_at)
+                    VALUES (${companyId}, ${name}, ${parent}, ${uom || null}, ${hsn || null}, ${openQty}, ${openVal}, ${raw}, now())
+                    ON CONFLICT (company_id, tally_name)
+                    DO UPDATE SET tally_parent = EXCLUDED.tally_parent, uom = EXCLUDED.uom,
+                                  hsn_code = EXCLUDED.hsn_code, opening_qty = EXCLUDED.opening_qty,
+                                  opening_value = EXCLUDED.opening_value, raw_data = EXCLUDED.raw_data, synced_at = now()
+                `
+                upserted++
+            }
+        } catch (err) {
+            logger.warn({ type, name: raw.Name ?? raw.name, err }, 'Master data upsert failed')
+        }
+    }
+
+    logger.info({ companyId, type, upserted, total: records.length }, 'Master data batch processed')
+}
+
+// Classify a Tally ledger into a broad type based on its group hierarchy
+function classifyLedger(group: string, parent: string): string {
+    const g = (group || parent || '').toLowerCase()
+    if (g.includes('sundry debtor') || g.includes('trade receivable')) return 'Customer'
+    if (g.includes('sundry creditor') || g.includes('trade payable')) return 'Supplier'
+    if (g.includes('bank') || g.includes('cash')) return 'Bank'
+    if (g.includes('duties') || g.includes('tax')) return 'Tax'
+    if (g.includes('direct expense') || g.includes('indirect expense') || g.includes('expense')) return 'Expense'
+    if (
+        g.includes('direct income') ||
+        g.includes('indirect income') ||
+        g.includes('income') ||
+        g.includes('revenue') ||
+        g.includes('sales')
+    )
+        return 'Income'
+    if (g.includes('fixed asset')) return 'Asset'
+    if (g.includes('capital') || g.includes('reserve') || g.includes('surplus')) return 'Equity'
+    if (g.includes('loan') || g.includes('advance') || g.includes('deposit')) return 'LoanAdvance'
+    if (g.includes('provision') || g.includes('liability') || g.includes('current liabilit')) return 'Liability'
+    return 'Other'
 }
 
 // ── Worker: tally-write (ERPNext → Tally) — tracks state only ────────────────

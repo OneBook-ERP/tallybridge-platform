@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { transformJournal } from './journal'
-import { makeConfig, makeJournalVoucher, makeLedgerEntry, makeVoucher } from '../../test/fixtures'
+import { makeConfig, makeJournalVoucher, makeLedgerEntry } from '../../test/fixtures'
 
 describe('transformJournal', () => {
     const config = makeConfig()

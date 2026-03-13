@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { transformPurchase } from './purchase'
-import { makeConfig, makePurchaseVoucher, makeLedgerEntry, makeInventoryEntry } from '../../test/fixtures'
+import { makeConfig, makePurchaseVoucher, makeLedgerEntry } from '../../test/fixtures'
 
 describe('transformPurchase', () => {
     const config = makeConfig()

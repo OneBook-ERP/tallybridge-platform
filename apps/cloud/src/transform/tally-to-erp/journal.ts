@@ -79,6 +79,7 @@ export function transformJournal(voucher: TallyVoucher, config: CompanyConfig): 
         accounts,
         total_debit: roundInr(totalDebit),
         total_credit: roundInr(totalCredit),
+        company_gstin: config.companyGstin || undefined,
         custom_tally_guid: voucher.guid,
         custom_sync_source: 'TALLYBRIDGE',
     }

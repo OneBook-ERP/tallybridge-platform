@@ -32,9 +32,13 @@ export function transformPurchase(
         const expAcct = inv.accountLedgerName
             ? resolveAccount(inv.accountLedgerName, config)
             : resolveAccount(inv.stockItemName, config)
-        const actualAcct = !isTransformError(expAcct)
-            ? expAcct.account
-            : (config.accountMappings['Default Purchase'] ?? 'Cost of Goods Sold')
+        const defaultExpense =
+            config.accountMappings['Default Purchase'] ??
+            config.accountMappings['Purchase'] ??
+            config.accountMappings['Purchase Account'] ??
+            config.accountMappings['PURCHASE'] ??
+            'Cost of Goods Sold'
+        const actualAcct = !isTransformError(expAcct) && !expAcct.isPartyFallback ? expAcct.account : defaultExpense
 
         items.push({
             item_code: sanitiseName(inv.stockItemName),
@@ -90,6 +94,8 @@ export function transformPurchase(
         is_inter_state: gst.isInterState ? 1 : 0,
         gst_category: gst.gstCategory,
         supplier_gstin: voucher.partyGSTIN || undefined,
+        company_gstin: config.companyGstin || undefined,
+        company_address: config.companyGstin ? `${config.erpnextCompany}-Billing` : undefined,
         is_rcm_applicable: gst.isRCM ? 1 : 0,
         remarks: voucher.narration || undefined,
         items,

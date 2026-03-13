@@ -6,6 +6,7 @@ import { env } from './lib/env'
 import { logger } from './lib/logger'
 import { checkConnection, closeConnection } from './db/db'
 import { startSyncWorker, startTallyWriteWorker } from './queue/consumer'
+import { startConnectorMonitor } from './sync/connector-monitor'
 
 async function main(): Promise<void> {
     // 1. Verify DB is reachable before accepting traffic.
@@ -18,7 +19,10 @@ async function main(): Promise<void> {
     const syncWorker = startSyncWorker()
     const tallyWorker = startTallyWriteWorker()
 
-    // 4. Start listening.
+    // 4. Start connector monitor (marks OFFLINE after 90s no heartbeat).
+    const monitorInterval = startConnectorMonitor()
+
+    // 5. Start listening.
     await app.listen({ port: env.PORT, host: env.HOST })
     logger.info(`TallyBridge Cloud listening on ${env.HOST}:${env.PORT}`)
 
@@ -26,6 +30,7 @@ async function main(): Promise<void> {
     const shutdown = async (signal: string) => {
         logger.info(`${signal} received — shutting down`)
         await app.close()
+        clearInterval(monitorInterval)
         await syncWorker.close()
         await tallyWorker.close()
         await closeConnection()

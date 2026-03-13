@@ -58,6 +58,7 @@ export function resolveAccount(
 
     // 3. Exact match in accountMappings
     const direct = config.accountMappings[tallyLedger]
+    if (direct === '__IGNORE__') return { account: '__IGNORE__', isRoundOff: true, isGST: false }
     if (direct) return { account: direct, isRoundOff: false, isGST: false }
 
     // 4. Party ledger fallback — triggered by Tally's ISPARTYLEDGER flag,
@@ -84,7 +85,7 @@ export function resolveAccount(
 
 /** Resolve a ledger as a party (Debtor/Creditor) based on direction hint. */
 function resolveAsParty(config: CompanyConfig, direction?: 'debtor' | 'creditor'): ResolvedAccount {
-    const suffix = deriveCompanySuffix(config.erpnextCompany)
+    const suffix = config.erpnextAbbr ?? deriveCompanySuffix(config.erpnextCompany)
     if (direction === 'creditor') {
         const acct =
             config.accountMappings['Sundry Creditors'] ?? config.accountMappings['Creditors'] ?? `Creditors - ${suffix}`
@@ -118,9 +119,8 @@ export function isTransformError(x: ResolvedAccount | TransformError): x is Tran
 // ── GST ledger name detection ─────────────────────────────────────────────────
 // Tally GST ledger names follow patterns like "Output CGST 9%", "Input IGST 18%"
 
-function detectGSTLedgerType(name: string, config: CompanyConfig): keyof CompanyConfig['gstLedgerMappings'] | null {
+function detectGSTLedgerType(name: string, _config: CompanyConfig): keyof CompanyConfig['gstLedgerMappings'] | null {
     const n = name.toLowerCase()
-    const isOutput = n.includes('output') || n.includes('sales') || n.includes('outward')
     const isInput = n.includes('input') || n.includes('purchase') || n.includes('inward') || n.includes('itc')
 
     if (n.includes('cgst')) return isInput ? 'input_cgst' : 'output_cgst'

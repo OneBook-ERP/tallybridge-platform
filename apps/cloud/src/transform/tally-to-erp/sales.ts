@@ -4,7 +4,7 @@
 import type { TallyVoucher, CompanyConfig, ERPNextSalesInvoice, SalesInvoiceItem, TransformResult } from '../../types'
 import { resolveAccount, isTransformError } from '../account-resolver'
 import { resolveGST } from '../gst-resolver'
-import { tallyDateToErp, absAmount, roundInr, sanitiseName, isRoundOff, stateFromGstin } from '../utils'
+import { tallyDateToErp, absAmount, roundInr, sanitiseName, stateFromGstin } from '../utils'
 
 const FALLBACK_STATE = 'Tamil Nadu' // only used if neither GSTIN nor config.defaultState is set
 
@@ -47,9 +47,14 @@ export function transformSales(voucher: TallyVoucher, config: CompanyConfig): Tr
             ? resolveAccount(inv.accountLedgerName, config)
             : resolveAccount(inv.stockItemName, config)
 
-        const actualAcct = !isTransformError(incomeAcct)
-            ? incomeAcct.account
-            : (config.accountMappings['Default Income'] ?? 'Sales')
+        const defaultIncome =
+            config.accountMappings['Default Income'] ??
+            config.accountMappings['Sales'] ??
+            config.accountMappings['Sales Account'] ??
+            config.accountMappings['SALES'] ??
+            'Sales'
+        const actualAcct =
+            !isTransformError(incomeAcct) && !incomeAcct.isPartyFallback ? incomeAcct.account : defaultIncome
 
         items.push({
             item_code: sanitiseName(inv.stockItemName),
@@ -111,6 +116,8 @@ export function transformSales(voucher: TallyVoucher, config: CompanyConfig): Tr
         is_inter_state: gst.isInterState ? 1 : 0,
         gst_category: gst.gstCategory,
         customer_gstin: voucher.partyGSTIN || undefined,
+        company_gstin: config.companyGstin || undefined,
+        company_address: config.companyGstin ? `${config.erpnextCompany}-Billing` : undefined,
         is_rcm_applicable: gst.isRCM ? 1 : 0,
         remarks: voucher.narration || undefined,
         items,
