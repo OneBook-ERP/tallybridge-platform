@@ -24,12 +24,18 @@ export interface ConflictCheckResult {
 export async function checkConflict(
     companyId: string,
     voucher: TallyVoucher,
-    newTallyHash: string
+    newTallyHash: string,
 ): Promise<ConflictCheckResult> {
-    const [record] = await sql<{
-        id: string; tally_hash: string; erpnext_hash: string
-        erpnext_name: string; erpnext_doctype: string; sync_status: string
-    }[]>`
+    const [record] = await sql<
+        {
+            id: string
+            tally_hash: string
+            erpnext_hash: string
+            erpnext_name: string
+            erpnext_doctype: string
+            sync_status: string
+        }[]
+    >`
     SELECT id, tally_hash, erpnext_hash, erpnext_name, erpnext_doctype, sync_status
     FROM sync_records
     WHERE company_id = ${companyId} AND tally_guid = ${voucher.guid}
@@ -77,7 +83,7 @@ export async function recordConflict(
     companyId: string,
     guid: string,
     tallySnapshot: unknown,
-    erpnextSnapshot: unknown
+    erpnextSnapshot: unknown,
 ): Promise<void> {
     await sql`
     INSERT INTO conflict_log (company_id, tally_guid, tally_snapshot, erpnext_snapshot)

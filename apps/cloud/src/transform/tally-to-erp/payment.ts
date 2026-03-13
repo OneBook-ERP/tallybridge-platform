@@ -7,37 +7,36 @@
  * Bank allocations → reference_no, reference_date
  * Bill allocations (Agst Ref) → Payment References linked to invoices
  */
-import type {
-    TallyVoucher, CompanyConfig,
-    ERPNextPaymentEntry, PaymentReference, TransformResult,
-} from '../../types'
+import type { TallyVoucher, CompanyConfig, ERPNextPaymentEntry, PaymentReference, TransformResult } from '../../types'
 import { resolveAccount, isTransformError } from '../account-resolver'
 import { tallyDateToErp, absAmount, roundInr, sanitiseName } from '../utils'
 
-export function transformPayment(
-    voucher: TallyVoucher,
-    config: CompanyConfig
-): TransformResult<ERPNextPaymentEntry> {
+export function transformPayment(voucher: TallyVoucher, config: CompanyConfig): TransformResult<ERPNextPaymentEntry> {
     const isReceipt = voucher.voucherTypeName.toLowerCase().includes('receipt')
     const paymentType = isReceipt ? 'Receive' : 'Pay'
     const partyType = isReceipt ? 'Customer' : 'Supplier'
 
     // Find party ledger entry — try isPartyLedger flag first, then match by partyLedgerName
-    const partyEntry = voucher.ledgerEntries.find(le => le.isPartyLedger)
-        ?? voucher.ledgerEntries.find(le => le.ledgerName === voucher.partyLedgerName)
+    const partyEntry =
+        voucher.ledgerEntries.find((le) => le.isPartyLedger) ??
+        voucher.ledgerEntries.find((le) => le.ledgerName === voucher.partyLedgerName)
 
     if (!partyEntry) {
         return {
             success: false,
-            error: { code: 'TRANSFORM_FAILED', message: 'Payment voucher has no party ledger entry', field: 'ledgerEntries' },
+            error: {
+                code: 'TRANSFORM_FAILED',
+                message: 'Payment voucher has no party ledger entry',
+                field: 'ledgerEntries',
+            },
         }
     }
 
     // Find bank/cash ledger entry (non-party)
-    let bankEntry = voucher.ledgerEntries.find(le =>
-        le !== partyEntry && !le.isPartyLedger && le.ledgerName !== voucher.partyLedgerName
+    let bankEntry = voucher.ledgerEntries.find(
+        (le) => le !== partyEntry && !le.isPartyLedger && le.ledgerName !== voucher.partyLedgerName,
     )
-    if (!bankEntry) bankEntry = voucher.ledgerEntries.find(le => le !== partyEntry)
+    if (!bankEntry) bankEntry = voucher.ledgerEntries.find((le) => le !== partyEntry)
     const bankResolved = resolveAccount(bankEntry?.ledgerName ?? '', config, {
         isPartyLedger: bankEntry?.isPartyLedger,
         partyLedgerName: voucher.partyLedgerName,
@@ -47,7 +46,7 @@ export function transformPayment(
     }
     const bankAccount = !isTransformError(bankResolved)
         ? bankResolved.account
-        : config.accountMappings['Cash'] ?? 'Cash'
+        : (config.accountMappings['Cash'] ?? 'Cash')
 
     const amount = roundInr(absAmount(partyEntry.amount))
 
@@ -64,7 +63,7 @@ export function transformPayment(
             // reference_name will be resolved by sync engine against sync_records table
             references.push({
                 reference_doctype: isReceipt ? 'Sales Invoice' : 'Purchase Invoice',
-                reference_name: ba.name,   // voucher number — engine will resolve to name
+                reference_name: ba.name, // voucher number — engine will resolve to name
                 allocated_amount: absAmount(ba.amount),
             })
         }
@@ -98,5 +97,10 @@ export function transformPayment(
 
 /** Short company suffix for default AR/AP accounts e.g. "AC" from "Acme Corp" */
 function shortCo(company: string): string {
-    return company.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 3)
+    return company
+        .split(' ')
+        .map((w) => w[0])
+        .join('')
+        .toUpperCase()
+        .slice(0, 3)
 }

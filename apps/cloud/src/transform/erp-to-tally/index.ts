@@ -2,4 +2,9 @@ export { erpSalesToTally } from './sales'
 export { erpPurchaseToTally } from './purchase'
 export { erpPaymentToTally } from './payment'
 export { erpJournalToTally } from './journal'
-export type { TallyVoucherInput, TallyLedgerEntryInput, TallyInventoryEntryInput, TallyBillAllocationInput } from './sales'
+export type {
+    TallyVoucherInput,
+    TallyLedgerEntryInput,
+    TallyInventoryEntryInput,
+    TallyBillAllocationInput,
+} from './sales'

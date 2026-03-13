@@ -1,23 +1,18 @@
 /**
  * Step 13 — Tally Journal/Contra → ERPNext Journal Entry
  */
-import type {
-    TallyVoucher, CompanyConfig,
-    ERPNextJournalEntry, JournalAccount, TransformResult,
-} from '../../types'
+import type { TallyVoucher, CompanyConfig, ERPNextJournalEntry, JournalAccount, TransformResult } from '../../types'
 import { resolveAccount, isTransformError } from '../account-resolver'
 import { tallyDateToErp, absAmount, roundInr, sanitiseName, isRoundOff } from '../utils'
 
-export function transformJournal(
-    voucher: TallyVoucher,
-    config: CompanyConfig
-): TransformResult<ERPNextJournalEntry> {
+export function transformJournal(voucher: TallyVoucher, config: CompanyConfig): TransformResult<ERPNextJournalEntry> {
     const isContra = voucher.voucherTypeName.toLowerCase() === 'contra'
     const voucherType = isContra ? 'Bank Entry' : 'Journal Entry'
 
     const accounts: JournalAccount[] = []
     const warnings: string[] = []
-    let totalDebit = 0, totalCredit = 0
+    let totalDebit = 0,
+        totalCredit = 0
 
     for (const le of voucher.ledgerEntries) {
         // Skip round-off entries (Tier 1 auto-correct)
@@ -55,7 +50,13 @@ export function transformJournal(
 
         // Party ledger? Attach party details for sub-ledger tracking
         if (le.isPartyLedger || resolved.isPartyFallback) {
-            jAccount.party = sanitiseName(le.ledgerName)
+            // Prefer voucher-level partyLedgerName when the entry's ledger is an
+            // account (e.g. "B2B Sales") rather than the actual party name.
+            const partyName =
+                voucher.partyLedgerName && le.ledgerName !== voucher.partyLedgerName
+                    ? voucher.partyLedgerName
+                    : le.ledgerName
+            jAccount.party = sanitiseName(partyName)
             jAccount.party_type = le.isDeemedPositive ? 'Customer' : 'Supplier'
         }
 

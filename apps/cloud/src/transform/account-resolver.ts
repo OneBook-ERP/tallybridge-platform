@@ -47,8 +47,7 @@ export function resolveAccount(
     //    from being resolved as non-GST accounts.
     const gstType = detectGSTLedgerType(tallyLedger, config)
     if (gstType) {
-        const account = config.gstLedgerMappings[gstType]
-            ?? config.accountMappings[tallyLedger]
+        const account = config.gstLedgerMappings[gstType] ?? config.accountMappings[tallyLedger]
         if (account) return { account, isRoundOff: false, isGST: true, gstType }
     }
 
@@ -63,8 +62,7 @@ export function resolveAccount(
 
     // 4. Party ledger fallback — triggered by Tally's ISPARTYLEDGER flag,
     //    OR by matching the voucher-level partyLedgerName.
-    const isKnownParty = opts?.isPartyLedger
-        || (opts?.partyLedgerName && tallyLedger === opts.partyLedgerName)
+    const isKnownParty = opts?.isPartyLedger || (opts?.partyLedgerName && tallyLedger === opts.partyLedgerName)
     if (isKnownParty) {
         return resolveAsParty(config, opts?.partyDirection)
     }
@@ -88,14 +86,11 @@ export function resolveAccount(
 function resolveAsParty(config: CompanyConfig, direction?: 'debtor' | 'creditor'): ResolvedAccount {
     const suffix = deriveCompanySuffix(config.erpnextCompany)
     if (direction === 'creditor') {
-        const acct = config.accountMappings['Sundry Creditors']
-            ?? config.accountMappings['Creditors']
-            ?? `Creditors - ${suffix}`
+        const acct =
+            config.accountMappings['Sundry Creditors'] ?? config.accountMappings['Creditors'] ?? `Creditors - ${suffix}`
         return { account: acct, isRoundOff: false, isGST: false, isPartyFallback: true }
     }
-    const acct = config.accountMappings['Sundry Debtors']
-        ?? config.accountMappings['Debtors']
-        ?? `Debtors - ${suffix}`
+    const acct = config.accountMappings['Sundry Debtors'] ?? config.accountMappings['Debtors'] ?? `Debtors - ${suffix}`
     return { account: acct, isRoundOff: false, isGST: false, isPartyFallback: true }
 }
 
@@ -104,11 +99,16 @@ function resolveAsParty(config: CompanyConfig, direction?: 'debtor' | 'creditor'
  * If a name matches, it's NOT a party — it's an unmapped expense account.
  * Party names (company/person names) won't contain these keywords.
  */
-const EXPENSE_KEYWORDS = /\b(charges?|expenses?|interest|tax|depreciation|rent|salary|insurance|dut(?:y|ies)|cess|income|payable|receivable|provision|advance\s+tax|tds|tcs|assets?\s+dep|maintena?n[cs]e|stall|warehouse|service\s+charge|transaction\s+fee|membership|consumable|staff\s*welfare|bonus|commission)\b/i
+const EXPENSE_KEYWORDS =
+    /\b(charges?|expenses?|interest|tax|depreciation|rent|salary|insurance|dut(?:y|ies)|cess|income|payable|receivable|provision|advance\s+tax|tds|tcs|assets?\s+dep|maintena?n[cs]e|stall|warehouse|service\s+charge|transaction\s+fee|membership|consumable|staff\s*welfare|bonus|commission|revenue|account|ledger|discount|freight|packing|loading|unloading|clearing|forwarding|brokerage|bad\s+debts?|sundry|misc|general|opening|closing|stock|cash|bank|capital|reserve|profit|loss|suspense|control)\b/i
 
 /** Derive company abbreviation suffix from company name (e.g. "Acme Corp Ltd" → "ACL") */
 function deriveCompanySuffix(company: string): string {
-    return company.split(/\s+/).map(w => w[0]?.toUpperCase() ?? '').join('').slice(0, 3)
+    return company
+        .split(/\s+/)
+        .map((w) => w[0]?.toUpperCase() ?? '')
+        .join('')
+        .slice(0, 3)
 }
 
 export function isTransformError(x: ResolvedAccount | TransformError): x is TransformError {
@@ -118,10 +118,7 @@ export function isTransformError(x: ResolvedAccount | TransformError): x is Tran
 // ── GST ledger name detection ─────────────────────────────────────────────────
 // Tally GST ledger names follow patterns like "Output CGST 9%", "Input IGST 18%"
 
-function detectGSTLedgerType(
-    name: string,
-    config: CompanyConfig
-): keyof CompanyConfig['gstLedgerMappings'] | null {
+function detectGSTLedgerType(name: string, config: CompanyConfig): keyof CompanyConfig['gstLedgerMappings'] | null {
     const n = name.toLowerCase()
     const isOutput = n.includes('output') || n.includes('sales') || n.includes('outward')
     const isInput = n.includes('input') || n.includes('purchase') || n.includes('inward') || n.includes('itc')

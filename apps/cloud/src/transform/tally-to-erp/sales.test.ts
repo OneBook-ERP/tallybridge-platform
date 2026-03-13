@@ -95,7 +95,12 @@ describe('transformSales', () => {
         const voucher = makeSalesVoucher({
             inventoryEntries: [],
             ledgerEntries: [
-                makeLedgerEntry({ ledgerName: 'Customer ABC', isPartyLedger: true, isDeemedPositive: true, amount: 11800 }),
+                makeLedgerEntry({
+                    ledgerName: 'Customer ABC',
+                    isPartyLedger: true,
+                    isDeemedPositive: true,
+                    amount: 11800,
+                }),
                 makeLedgerEntry({ ledgerName: 'B2B Sales', amount: -10000 }),
                 makeLedgerEntry({ ledgerName: 'Output CGST 9%', amount: -900 }),
                 makeLedgerEntry({ ledgerName: 'Output SGST 9%', amount: -900 }),
@@ -114,7 +119,12 @@ describe('transformSales', () => {
         const voucher = makeSalesVoucher({
             inventoryEntries: [],
             ledgerEntries: [
-                makeLedgerEntry({ ledgerName: 'Customer ABC', isPartyLedger: true, isDeemedPositive: true, amount: 5000 }),
+                makeLedgerEntry({
+                    ledgerName: 'Customer ABC',
+                    isPartyLedger: true,
+                    isDeemedPositive: true,
+                    amount: 5000,
+                }),
                 makeLedgerEntry({ ledgerName: 'Unknown Revenue Account', amount: -5000 }),
             ],
         })
@@ -128,7 +138,21 @@ describe('transformSales', () => {
     it('warns when item has no HSN code', () => {
         const voucher = makeSalesVoucher({
             inventoryEntries: [
-                { stockItemName: 'No HSN Item', rate: 100, rateUOM: 'Nos', amount: 1000, actualQty: 10, actualQtyUOM: 'Nos', billedQty: 10, billedQtyUOM: 'Nos', hsnCode: '', gstOvrdnRate: 0, godownName: '', expiryDate: '', accountLedgerName: 'B2B Sales' },
+                {
+                    stockItemName: 'No HSN Item',
+                    rate: 100,
+                    rateUOM: 'Nos',
+                    amount: 1000,
+                    actualQty: 10,
+                    actualQtyUOM: 'Nos',
+                    billedQty: 10,
+                    billedQtyUOM: 'Nos',
+                    hsnCode: '',
+                    gstOvrdnRate: 0,
+                    godownName: '',
+                    expiryDate: '',
+                    accountLedgerName: 'B2B Sales',
+                },
             ],
         })
         const result = transformSales(voucher, config)

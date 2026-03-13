@@ -9,12 +9,12 @@ export function makeConfig(overrides: Partial<CompanyConfig> = {}): CompanyConfi
     return {
         companyId: 'test-company-id',
         erpnextCompany: 'Test Company',
-        companyGstin: '33AABCT1234A1ZA',  // Tamil Nadu
+        companyGstin: '33AABCT1234A1ZA', // Tamil Nadu
         currency: 'INR',
         accountMappings: {
             'B2B Sales': 'Sales - TC',
             'B2B Purchase': 'Cost of Goods Sold - TC',
-            'Cash': 'Cash - TC',
+            Cash: 'Cash - TC',
             'Bank Account': 'Bank Account - TC',
             'Sundry Debtors': 'Debtors - TC',
             'Sundry Creditors': 'Creditors - TC',
@@ -96,9 +96,7 @@ export function makeVoucher(overrides: Partial<TallyVoucher> = {}): TallyVoucher
             makeLedgerEntry({ ledgerName: 'Output CGST 9%', amount: -900 }),
             makeLedgerEntry({ ledgerName: 'Output SGST 9%', amount: -900 }),
         ],
-        inventoryEntries: [
-            makeInventoryEntry(),
-        ],
+        inventoryEntries: [makeInventoryEntry()],
         ...overrides,
     }
 }
@@ -117,14 +115,17 @@ export function makePurchaseVoucher(overrides: Partial<TallyVoucher> = {}): Tall
         partyGSTIN: '33AABCS5678E1ZB',
         narration: 'Test purchase',
         ledgerEntries: [
-            makeLedgerEntry({ ledgerName: 'Supplier XYZ', isPartyLedger: true, isDeemedPositive: false, amount: -11800 }),
+            makeLedgerEntry({
+                ledgerName: 'Supplier XYZ',
+                isPartyLedger: true,
+                isDeemedPositive: false,
+                amount: -11800,
+            }),
             makeLedgerEntry({ ledgerName: 'B2B Purchase', isDeemedPositive: true, amount: 10000 }),
             makeLedgerEntry({ ledgerName: 'Input CGST 9%', isDeemedPositive: true, amount: 900 }),
             makeLedgerEntry({ ledgerName: 'Input SGST 9%', isDeemedPositive: true, amount: 900 }),
         ],
-        inventoryEntries: [
-            makeInventoryEntry({ accountLedgerName: 'B2B Purchase' }),
-        ],
+        inventoryEntries: [makeInventoryEntry({ accountLedgerName: 'B2B Purchase' })],
         ...overrides,
     })
 }
@@ -156,7 +157,12 @@ export function makeReceiptVoucher(overrides: Partial<TallyVoucher> = {}): Tally
         narration: 'Receipt from customer',
         inventoryEntries: [],
         ledgerEntries: [
-            makeLedgerEntry({ ledgerName: 'Customer ABC', isPartyLedger: true, isDeemedPositive: false, amount: -11800 }),
+            makeLedgerEntry({
+                ledgerName: 'Customer ABC',
+                isPartyLedger: true,
+                isDeemedPositive: false,
+                amount: -11800,
+            }),
             makeLedgerEntry({ ledgerName: 'Bank Account', isDeemedPositive: true, amount: 11800 }),
         ],
         ...overrides,
@@ -208,9 +214,7 @@ export function makePascalCaseVoucher(): Record<string, unknown> {
                 IsDeemedPositive: true,
                 IsPartyLedger: true,
                 Amount: 11800,
-                BillAllocations: [
-                    { Name: 'SI-GO-001', BillType: 'New Ref', Amount: 11800, DueDate: '20240501' },
-                ],
+                BillAllocations: [{ Name: 'SI-GO-001', BillType: 'New Ref', Amount: 11800, DueDate: '20240501' }],
                 BankAllocations: [],
             },
             {

@@ -36,11 +36,7 @@ export const syncDataRoute: FastifyPluginAsync = async (fastify) => {
             }
 
             const batchId = randomUUID()
-            const records: unknown[] = [
-                ...(body.vouchers ?? []),
-                ...(body.ledgers ?? []),
-                ...(body.stockItems ?? []),
-            ]
+            const records: unknown[] = [...(body.vouchers ?? []), ...(body.ledgers ?? []), ...(body.stockItems ?? [])]
 
             if (records.length === 0) {
                 return reply.send({ ok: true, batchId, queued: 0 })
@@ -62,6 +58,6 @@ export const syncDataRoute: FastifyPluginAsync = async (fastify) => {
 
             logger.info({ companyId: body.companyId, batchId, count: records.length }, 'Sync data enqueued')
             return reply.send({ ok: true, batchId, queued: records.length })
-        }
+        },
     )
 }

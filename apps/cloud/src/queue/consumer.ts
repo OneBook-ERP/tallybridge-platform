@@ -19,25 +19,29 @@ export interface CompanyConfigWithCreds extends CompanyConfig {
 
 // ── Helper: load config for a company ─────────────────────────────────────────
 async function loadConfig(companyId: string): Promise<CompanyConfigWithCreds | null> {
-    const [row] = await sql<{
-        account_mappings: Record<string, string>
-        gst_ledger_mappings: Record<string, string>
-        voucher_type_mappings: Record<string, unknown>
-        conflict_strategy: { default: string; perDoctype?: Record<string, string> }
-        sync_direction_rules: Record<string, string>
-    }[]>`
+    const [row] = await sql<
+        {
+            account_mappings: Record<string, string>
+            gst_ledger_mappings: Record<string, string>
+            voucher_type_mappings: Record<string, unknown>
+            conflict_strategy: { default: string; perDoctype?: Record<string, string> }
+            sync_direction_rules: Record<string, string>
+        }[]
+    >`
     SELECT account_mappings, gst_ledger_mappings, voucher_type_mappings,
            conflict_strategy, sync_direction_rules
     FROM config_profiles WHERE company_id = ${companyId}
   `
     if (!row) return null
 
-    const [company] = await sql<{
-        erpnext_company: string
-        erpnext_url: string
-        erpnext_api_key: string
-        erpnext_api_secret: string
-    }[]>`
+    const [company] = await sql<
+        {
+            erpnext_company: string
+            erpnext_url: string
+            erpnext_api_key: string
+            erpnext_api_secret: string
+        }[]
+    >`
     SELECT erpnext_company, erpnext_url, erpnext_api_key, erpnext_api_secret
     FROM companies WHERE id = ${companyId}
   `
@@ -54,9 +58,9 @@ async function loadConfig(companyId: string): Promise<CompanyConfigWithCreds | n
             output_cgst: row.gst_ledger_mappings?.output_cgst ?? '',
             output_sgst: row.gst_ledger_mappings?.output_sgst ?? '',
             output_igst: row.gst_ledger_mappings?.output_igst ?? '',
-            input_cgst:  row.gst_ledger_mappings?.input_cgst  ?? '',
-            input_sgst:  row.gst_ledger_mappings?.input_sgst  ?? '',
-            input_igst:  row.gst_ledger_mappings?.input_igst  ?? '',
+            input_cgst: row.gst_ledger_mappings?.input_cgst ?? '',
+            input_sgst: row.gst_ledger_mappings?.input_sgst ?? '',
+            input_igst: row.gst_ledger_mappings?.input_igst ?? '',
         },
         voucherTypeMappings: (row.voucher_type_mappings ?? {}) as CompanyConfig['voucherTypeMappings'],
         conflictStrategy: (row.conflict_strategy as CompanyConfig['conflictStrategy']) ?? { default: 'TALLY_WINS' },
@@ -79,11 +83,16 @@ export function startSyncWorker(): Worker<SyncJobData, void, SyncJobName> {
             }
 
             if (recordType !== 'voucher') {
-                logger.info({ companyId, recordType, count: records.length }, 'Master data batch — skipping (engine handles vouchers only)')
+                logger.info(
+                    { companyId, recordType, count: records.length },
+                    'Master data batch — skipping (engine handles vouchers only)',
+                )
                 return
             }
 
-            let synced = 0, errored = 0, skipped = 0
+            let synced = 0,
+                errored = 0,
+                skipped = 0
 
             for (const raw of records) {
                 const normalized = normalizeVoucher(raw as Record<string, unknown>)
@@ -98,14 +107,18 @@ export function startSyncWorker(): Worker<SyncJobData, void, SyncJobName> {
             }
 
             broadcaster.emit(companyId, 'sync:progress', {
-                companyId, direction: 'TALLY_TO_ERP',
-                count: records.length, synced, errored, skipped,
+                companyId,
+                direction: 'TALLY_TO_ERP',
+                count: records.length,
+                synced,
+                errored,
+                skipped,
                 queueDepth: 0,
             })
 
             logger.info({ companyId, synced, errored, skipped }, 'Sync batch complete')
         },
-        { connection: redisOpts, concurrency: 5 }
+        { connection: redisOpts, concurrency: 5 },
     )
 
     worker.on('completed', (job) => logger.info({ jobId: job.id }, 'sync-jobs completed'))
@@ -120,10 +133,13 @@ export function startTallyWriteWorker(): Worker<TallyWriteJobData, void, TallyWr
         'tally-write',
         async (job: Job<TallyWriteJobData, void, TallyWriteJobName>) => {
             const { companyId, action, tallyGuid } = job.data
-            logger.info({ jobId: job.id, companyId, action, tallyGuid }, 'tally-write: tracking job delivery via long-poll')
+            logger.info(
+                { jobId: job.id, companyId, action, tallyGuid },
+                'tally-write: tracking job delivery via long-poll',
+            )
             // Actual write happens on connector; result arrives via POST /connector/sync-result
         },
-        { connection: redisOpts, concurrency: 2 }
+        { connection: redisOpts, concurrency: 2 },
     )
     worker.on('completed', (job) => logger.info({ jobId: job.id }, 'tally-write completed'))
     worker.on('failed', (job, err) => logger.error({ jobId: job?.id, err }, 'tally-write failed'))

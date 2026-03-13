@@ -5,7 +5,7 @@
 // ── Company configuration (from config_profiles JSONB) ───────────────────────
 
 export interface AccountMapping {
-    [tallyLedgerName: string]: string  // → ERPNext account name
+    [tallyLedgerName: string]: string // → ERPNext account name
 }
 
 export interface GSTLedgerMapping {
@@ -35,11 +35,11 @@ export interface ConflictStrategy {
 
 export interface CompanyConfig {
     companyId: string
-    erpnextCompany: string    // ERPNext company name (for items)
-    companyGstin?: string     // Company GSTIN — used to derive state for inter-state GST
-    defaultState?: string     // Fallback state when GSTIN is not set (e.g. "Tamil Nadu")
-    currency: string    // "INR"
-    costCenter?: string    // e.g. "Main - AC"
+    erpnextCompany: string // ERPNext company name (for items)
+    companyGstin?: string // Company GSTIN — used to derive state for inter-state GST
+    defaultState?: string // Fallback state when GSTIN is not set (e.g. "Tamil Nadu")
+    currency: string // "INR"
+    costCenter?: string // e.g. "Main - AC"
     accountMappings: AccountMapping
     gstLedgerMappings: GSTLedgerMapping
     voucherTypeMappings: VoucherTypeMapping
@@ -63,15 +63,15 @@ export interface TransformError {
 }
 
 export type TransformErrorCode =
-    | 'UNMAPPED_LEDGER'         // Tier 3 — blocks sync
-    | 'UNMAPPED_ITEM'           // Tier 3
-    | 'MISSING_GSTIN'           // Tier 3 for B2B
+    | 'UNMAPPED_LEDGER' // Tier 3 — blocks sync
+    | 'UNMAPPED_ITEM' // Tier 3
+    | 'MISSING_GSTIN' // Tier 3 for B2B
     | 'PLACE_OF_SUPPLY_MISSING' // Tier 3
-    | 'MISSING_HSN'             // Tier 2 — warning
-    | 'ROUND_OFF_AUTO'          // Tier 1 — auto-corrected
-    | 'MISSING_PAN'             // Tier 2
-    | 'CURRENCY_NOT_FOUND'      // Tier 3
-    | 'TRANSFORM_FAILED'        // Unexpected — engineering review
+    | 'MISSING_HSN' // Tier 2 — warning
+    | 'ROUND_OFF_AUTO' // Tier 1 — auto-corrected
+    | 'MISSING_PAN' // Tier 2
+    | 'CURRENCY_NOT_FOUND' // Tier 3
+    | 'TRANSFORM_FAILED' // Unexpected — engineering review
 
 // ── Sync record (from sync_records table) ─────────────────────────────────────
 

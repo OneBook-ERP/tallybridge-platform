@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest'
-import { tallyDateToErp, erpDateToTally, contentHash, absAmount, roundInr, sanitiseName, isRoundOff, stateFromGstin } from './utils'
+import {
+    tallyDateToErp,
+    erpDateToTally,
+    contentHash,
+    absAmount,
+    roundInr,
+    sanitiseName,
+    isRoundOff,
+    stateFromGstin,
+} from './utils'
 
 describe('tallyDateToErp', () => {
     it('converts yyyymmdd format', () => {

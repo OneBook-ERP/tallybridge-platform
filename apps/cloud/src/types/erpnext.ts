@@ -8,17 +8,17 @@
 
 export interface ERPNextSalesInvoice {
     doctype: 'Sales Invoice'
-    name?: string      // auto-assigned by ERP on create
+    name?: string // auto-assigned by ERP on create
     customer: string
     company: string
-    posting_date: string      // "YYYY-MM-DD"
+    posting_date: string // "YYYY-MM-DD"
     due_date?: string
-    bill_no?: string      // Tally voucher number
+    bill_no?: string // Tally voucher number
     is_return: 0 | 1
-    return_against?: string      // name of original SI for credit notes
-    currency: string      // "INR" default
-    conversion_rate: number      // 1 for INR
-    place_of_supply: string      // "27-Maharashtra"
+    return_against?: string // name of original SI for credit notes
+    currency: string // "INR" default
+    conversion_rate: number // 1 for INR
+    place_of_supply: string // "27-Maharashtra"
     is_inter_state: 0 | 1
     gst_category: GSTCategory
     customer_gstin?: string
@@ -34,7 +34,7 @@ export interface ERPNextSalesInvoice {
     custom_tally_guid?: string
     custom_tally_voucher_number?: string
     custom_tally_sync_status?: 'Synced' | 'Pending' | 'Error'
-    custom_sync_source?: 'TALLYBRIDGE'   // loop-guard marker
+    custom_sync_source?: 'TALLYBRIDGE' // loop-guard marker
 }
 
 export interface SalesInvoiceItem {
@@ -69,8 +69,8 @@ export interface ERPNextPurchaseInvoice {
     supplier: string
     company: string
     posting_date: string
-    bill_date?: string      // supplier's invoice date
-    bill_no?: string      // supplier's invoice number
+    bill_date?: string // supplier's invoice date
+    bill_no?: string // supplier's invoice number
     is_return: 0 | 1
     return_against?: string
     currency: string
@@ -117,15 +117,15 @@ export interface ERPNextPaymentEntry {
     party_name?: string
     company: string
     mode_of_payment?: string
-    paid_from: string      // bank/cash account debited
-    paid_to: string      // bank/cash account credited
+    paid_from: string // bank/cash account debited
+    paid_to: string // bank/cash account credited
     paid_from_account_currency: string
     paid_to_account_currency: string
     paid_amount: number
     received_amount: number
     source_exchange_rate: number
     target_exchange_rate: number
-    reference_no?: string      // cheque / UTR number
+    reference_no?: string // cheque / UTR number
     reference_date?: string
     remarks?: string
     references: PaymentReference[]
@@ -177,12 +177,8 @@ export interface TaxLine {
     account_head: string
     tax_amount: number
     description?: string
-    rate?: number   // 0 when charge_type = 'Actual'
+    rate?: number // 0 when charge_type = 'Actual'
     included_in_print_rate?: 0 | 1
 }
 
-export type ERPNextDocument =
-    | ERPNextSalesInvoice
-    | ERPNextPurchaseInvoice
-    | ERPNextPaymentEntry
-    | ERPNextJournalEntry
+export type ERPNextDocument = ERPNextSalesInvoice | ERPNextPurchaseInvoice | ERPNextPaymentEntry | ERPNextJournalEntry

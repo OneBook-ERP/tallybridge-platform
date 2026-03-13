@@ -8,7 +8,7 @@ import type { TallyVoucherInput, TallyLedgerEntryInput, TallyInventoryEntryInput
 export function erpPurchaseToTally(
     doc: ERPNextPurchaseInvoice,
     config: CompanyConfig,
-    action: 'CREATE' | 'ALTER' | 'CANCEL' = 'CREATE'
+    action: 'CREATE' | 'ALTER' | 'CANCEL' = 'CREATE',
 ): TallyVoucherInput {
     const ledgerEntries: TallyLedgerEntryInput[] = []
     const inventoryEntries: TallyInventoryEntryInput[] = []
@@ -55,12 +55,14 @@ export function erpPurchaseToTally(
         isDeemedPositive: false,
         isPartyLedger: true,
         amount: -total,
-        billAllocations: [{
-            name: doc.bill_no ?? 'BILL-REF',
-            billType: 'New Ref',
-            amount: -total,
-            dueDate: doc.bill_date ? erpDateToTally(doc.bill_date) : undefined,
-        }],
+        billAllocations: [
+            {
+                name: doc.bill_no ?? 'BILL-REF',
+                billType: 'New Ref',
+                amount: -total,
+                dueDate: doc.bill_date ? erpDateToTally(doc.bill_date) : undefined,
+            },
+        ],
     })
 
     return {

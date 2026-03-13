@@ -55,7 +55,10 @@ describe('transformPayment', () => {
         const voucher = makePaymentVoucher({
             ledgerEntries: [
                 makeLedgerEntry({
-                    ledgerName: 'Supplier XYZ', isPartyLedger: true, isDeemedPositive: true, amount: 11800,
+                    ledgerName: 'Supplier XYZ',
+                    isPartyLedger: true,
+                    isDeemedPositive: true,
+                    amount: 11800,
                     bankAllocations: [{ instNumber: '', uniqueReferenceNumber: 'UTR123456', transactionType: 'NEFT' }],
                 }),
                 makeLedgerEntry({ ledgerName: 'Bank Account', isDeemedPositive: false, amount: -11800 }),
@@ -72,7 +75,10 @@ describe('transformPayment', () => {
         const voucher = makePaymentVoucher({
             ledgerEntries: [
                 makeLedgerEntry({
-                    ledgerName: 'Supplier XYZ', isPartyLedger: true, isDeemedPositive: true, amount: 5000,
+                    ledgerName: 'Supplier XYZ',
+                    isPartyLedger: true,
+                    isDeemedPositive: true,
+                    amount: 5000,
                     bankAllocations: [{ instNumber: 'CHQ-789', uniqueReferenceNumber: '', transactionType: 'Cheque' }],
                 }),
                 makeLedgerEntry({ ledgerName: 'Bank Account', isDeemedPositive: false, amount: -5000 }),
@@ -89,10 +95,11 @@ describe('transformPayment', () => {
         const voucher = makePaymentVoucher({
             ledgerEntries: [
                 makeLedgerEntry({
-                    ledgerName: 'Supplier XYZ', isPartyLedger: true, isDeemedPositive: true, amount: 11800,
-                    billAllocations: [
-                        { name: 'PI-001', billType: 'Agst Ref', amount: 11800, dueDate: '20240501' },
-                    ],
+                    ledgerName: 'Supplier XYZ',
+                    isPartyLedger: true,
+                    isDeemedPositive: true,
+                    amount: 11800,
+                    billAllocations: [{ name: 'PI-001', billType: 'Agst Ref', amount: 11800, dueDate: '20240501' }],
                 }),
                 makeLedgerEntry({ ledgerName: 'Bank Account', isDeemedPositive: false, amount: -11800 }),
             ],
@@ -111,10 +118,11 @@ describe('transformPayment', () => {
         const voucher = makeReceiptVoucher({
             ledgerEntries: [
                 makeLedgerEntry({
-                    ledgerName: 'Customer ABC', isPartyLedger: true, isDeemedPositive: false, amount: -11800,
-                    billAllocations: [
-                        { name: 'SI-001', billType: 'Agst Ref', amount: -11800, dueDate: '20240501' },
-                    ],
+                    ledgerName: 'Customer ABC',
+                    isPartyLedger: true,
+                    isDeemedPositive: false,
+                    amount: -11800,
+                    billAllocations: [{ name: 'SI-001', billType: 'Agst Ref', amount: -11800, dueDate: '20240501' }],
                 }),
                 makeLedgerEntry({ ledgerName: 'Bank Account', isDeemedPositive: true, amount: 11800 }),
             ],
@@ -128,9 +136,7 @@ describe('transformPayment', () => {
 
     it('fails when no party ledger entry exists', () => {
         const voucher = makePaymentVoucher({
-            ledgerEntries: [
-                makeLedgerEntry({ ledgerName: 'Bank Account', isPartyLedger: false, amount: 5000 }),
-            ],
+            ledgerEntries: [makeLedgerEntry({ ledgerName: 'Bank Account', isPartyLedger: false, amount: 5000 })],
         })
         const result = transformPayment(voucher, config)
 

@@ -8,20 +8,20 @@
 
 export interface TallyVoucher {
     guid: string
-    date: string   // "20240401"
-    alteredOn: string   // "20240401120000" (yyyymmddHHmmss)
-    voucherTypeName: string   // "Sales" | "Purchase" | "Payment" | "Receipt" | "Journal" | "Contra"
+    date: string // "20240401"
+    alteredOn: string // "20240401120000" (yyyymmddHHmmss)
+    voucherTypeName: string // "Sales" | "Purchase" | "Payment" | "Receipt" | "Journal" | "Contra"
     voucherNumber: string
-    referenceNumber: string   // supplier's invoice number (for Purchase)
-    referenceDate: string   // "20240401" (supplier's date)
+    referenceNumber: string // supplier's invoice number (for Purchase)
+    referenceDate: string // "20240401" (supplier's date)
     partyLedgerName: string
     isInvoice: boolean
-    isOptional: boolean  // PRD rule: NEVER sync if true — excluded already by connector
+    isOptional: boolean // PRD rule: NEVER sync if true — excluded already by connector
     isCancelled: boolean
     narration: string
     foreignCurrency: string
     foreignAmount: number
-    placeOfSupply: string   // state name e.g. "Maharashtra"
+    placeOfSupply: string // state name e.g. "Maharashtra"
     partyGSTIN: string
     isRCMApplicable: boolean
     ewayBillNumber: string
@@ -32,24 +32,24 @@ export interface TallyVoucher {
 
 export interface TallyLedgerEntry {
     ledgerName: string
-    isDeemedPositive: boolean   // true=Debit, false=Credit
+    isDeemedPositive: boolean // true=Debit, false=Credit
     isPartyLedger: boolean
-    amount: number    // signed: positive=Debit in Tally's sense
+    amount: number // signed: positive=Debit in Tally's sense
     billAllocations: TallyBillAllocation[]
     bankAllocations: TallyBankAllocation[]
 }
 
 export interface TallyBillAllocation {
-    name: string    // invoice reference
+    name: string // invoice reference
     billType: 'New Ref' | 'Agst Ref' | 'Advance'
     amount: number
-    dueDate: string    // "20240501"
+    dueDate: string // "20240501"
 }
 
 export interface TallyBankAllocation {
-    instNumber: string  // cheque / DD number
-    uniqueReferenceNumber: string  // UTR for NEFT/RTGS
-    transactionType: string  // Cheque | NEFT | RTGS | UPI
+    instNumber: string // cheque / DD number
+    uniqueReferenceNumber: string // UTR for NEFT/RTGS
+    transactionType: string // Cheque | NEFT | RTGS | UPI
 }
 
 export interface TallyInventoryEntry {
@@ -65,7 +65,7 @@ export interface TallyInventoryEntry {
     gstOvrdnRate: number
     godownName: string
     expiryDate: string
-    accountLedgerName: string   // income / purchase account from ACCOUNTINGALLOCATIONS
+    accountLedgerName: string // income / purchase account from ACCOUNTINGALLOCATIONS
 }
 
 // ── Ledger master (API 3) ─────────────────────────────────────────────────────
@@ -111,7 +111,7 @@ export interface TallyStockItem {
 export interface TallySyncBatch {
     companyId: string
     batchId: string
-    fromTimestamp: string        // yyyymmddHHmmss
+    fromTimestamp: string // yyyymmddHHmmss
     toTimestamp: string
     vouchers?: TallyVoucher[]
     ledgers?: TallyLedger[]

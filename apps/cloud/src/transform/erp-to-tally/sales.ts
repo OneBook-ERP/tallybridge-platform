@@ -11,7 +11,7 @@ export interface TallyVoucherInput {
     guid: string
     voucherType: string
     objView: string
-    date: string   // yyyymmdd
+    date: string // yyyymmdd
     voucherNumber: string
     referenceNumber?: string
     partyLedgerName: string
@@ -52,7 +52,7 @@ export interface TallyInventoryEntryInput {
 export function erpSalesToTally(
     doc: ERPNextSalesInvoice,
     config: CompanyConfig,
-    action: 'CREATE' | 'ALTER' | 'CANCEL' = 'CREATE'
+    action: 'CREATE' | 'ALTER' | 'CANCEL' = 'CREATE',
 ): TallyVoucherInput {
     const ledgerEntries: TallyLedgerEntryInput[] = []
     const inventoryEntries: TallyInventoryEntryInput[] = []
@@ -65,11 +65,13 @@ export function erpSalesToTally(
         isDeemedPositive: true,
         isPartyLedger: true,
         amount: total,
-        billAllocations: [{
-            name: doc.bill_no || 'INV-REF',
-            billType: 'New Ref',
-            amount: total,
-        }],
+        billAllocations: [
+            {
+                name: doc.bill_no || 'INV-REF',
+                billType: 'New Ref',
+                amount: total,
+            },
+        ],
     })
 
     // Sales income Cr entries

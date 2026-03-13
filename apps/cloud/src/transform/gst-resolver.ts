@@ -15,22 +15,47 @@ import { resolveAccount, isTransformError, type ResolvedAccount } from './accoun
 
 // Map of Indian state codes → state names (used for inter-state detection)
 const STATE_CODES: Record<string, string> = {
-    '01': 'Jammu and Kashmir', '02': 'Himachal Pradesh', '03': 'Punjab',
-    '04': 'Chandigarh', '05': 'Uttarakhand', '06': 'Haryana', '07': 'Delhi',
-    '08': 'Rajasthan', '09': 'Uttar Pradesh', '10': 'Bihar', '11': 'Sikkim',
-    '12': 'Arunachal Pradesh', '13': 'Nagaland', '14': 'Manipur', '15': 'Mizoram',
-    '16': 'Tripura', '17': 'Meghalaya', '18': 'Assam', '19': 'West Bengal',
-    '20': 'Jharkhand', '21': 'Odisha', '22': 'Chhattisgarh', '23': 'Madhya Pradesh',
-    '24': 'Gujarat', '26': 'Dadra and Nagar Haveli', '27': 'Maharashtra',
-    '29': 'Karnataka', '30': 'Goa', '31': 'Lakshadweep', '32': 'Kerala',
-    '33': 'Tamil Nadu', '34': 'Puducherry', '35': 'Andaman and Nicobar Islands',
-    '36': 'Telangana', '37': 'Andhra Pradesh',
+    '01': 'Jammu and Kashmir',
+    '02': 'Himachal Pradesh',
+    '03': 'Punjab',
+    '04': 'Chandigarh',
+    '05': 'Uttarakhand',
+    '06': 'Haryana',
+    '07': 'Delhi',
+    '08': 'Rajasthan',
+    '09': 'Uttar Pradesh',
+    '10': 'Bihar',
+    '11': 'Sikkim',
+    '12': 'Arunachal Pradesh',
+    '13': 'Nagaland',
+    '14': 'Manipur',
+    '15': 'Mizoram',
+    '16': 'Tripura',
+    '17': 'Meghalaya',
+    '18': 'Assam',
+    '19': 'West Bengal',
+    '20': 'Jharkhand',
+    '21': 'Odisha',
+    '22': 'Chhattisgarh',
+    '23': 'Madhya Pradesh',
+    '24': 'Gujarat',
+    '26': 'Dadra and Nagar Haveli',
+    '27': 'Maharashtra',
+    '29': 'Karnataka',
+    '30': 'Goa',
+    '31': 'Lakshadweep',
+    '32': 'Kerala',
+    '33': 'Tamil Nadu',
+    '34': 'Puducherry',
+    '35': 'Andaman and Nicobar Islands',
+    '36': 'Telangana',
+    '37': 'Andhra Pradesh',
 }
 
 export interface GSTAnalysis {
     isInterState: boolean
     gstCategory: GSTCategory
-    placeOfSupply: string    // "27-Maharashtra" format for ERPNext
+    placeOfSupply: string // "27-Maharashtra" format for ERPNext
     taxLines: TaxLine[]
     isRCM: boolean
 }
@@ -38,7 +63,7 @@ export interface GSTAnalysis {
 export interface GSTResolverParams {
     voucher: TallyVoucher
     config: CompanyConfig
-    companyState: string  // company's home state name e.g. "Maharashtra"
+    companyState: string // company's home state name e.g. "Maharashtra"
 }
 
 /**
@@ -56,7 +81,7 @@ export function resolveGST(params: GSTResolverParams): GSTAnalysis {
 
     // ── Place of supply in ERPNext format ───────────────────────────────────
     const stateCode = stateNameToCode(partyState || companyState)
-    const placeOfSupply = stateCode ? `${stateCode}-${partyState || companyState}` : (partyState || companyState)
+    const placeOfSupply = stateCode ? `${stateCode}-${partyState || companyState}` : partyState || companyState
 
     // ── Compute net total (non-party, non-GST ledger amounts) for rate calc ──
     let netTotal = 0
@@ -71,7 +96,7 @@ export function resolveGST(params: GSTResolverParams): GSTAnalysis {
     const taxLines: TaxLine[] = []
     for (const le of voucher.ledgerEntries) {
         const resolved = resolveAccount(le.ledgerName, config)
-        if (isTransformError(resolved)) continue  // non-GST ledger
+        if (isTransformError(resolved)) continue // non-GST ledger
         if (!resolved.isGST) continue
 
         const absAmount = Math.abs(le.amount)
@@ -82,7 +107,9 @@ export function resolveGST(params: GSTResolverParams): GSTAnalysis {
         const rateMatch = le.ledgerName.match(/(\d+(?:\.\d+)?)\s*%/)
         const derivedRate = rateMatch
             ? parseFloat(rateMatch[1])
-            : netTotal > 0 ? Math.round((absAmount / netTotal) * 100 * 100) / 100 : 0
+            : netTotal > 0
+              ? Math.round((absAmount / netTotal) * 100 * 100) / 100
+              : 0
 
         taxLines.push({
             charge_type: 'On Net Total',

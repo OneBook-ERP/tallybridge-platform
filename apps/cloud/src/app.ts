@@ -23,7 +23,6 @@ import { syncDataRoute } from './api/connector/sync-data'
 // Webhook — ERPNext → Tally
 import { erpnextWebhookRoute } from './api/webhook/erpnext'
 
-
 // Dashboard API
 import { dashboardRoutes } from './api/dashboard/routes'
 
@@ -50,10 +49,45 @@ export async function buildApp() {
     })
 
     // ── Health check ───────────────────────────────────────────────────────────
-    app.get('/health', async () => ({
-        status: 'ok',
-        timestamp: new Date().toISOString(),
-    }))
+    app.get('/health', async () => {
+        let dbOk = false
+        let redisOk = false
+        try {
+            const { sql: dbSql } = await import('./db/db')
+            await dbSql`SELECT 1`
+            dbOk = true
+        } catch {
+            /* db unavailable */
+        }
+        try {
+            const { redis } = await import('./queue/queues')
+            const pong = await redis.ping()
+            redisOk = pong === 'PONG'
+        } catch {
+            /* redis unavailable */
+        }
+        const allOk = dbOk && redisOk
+        return {
+            status: allOk ? 'ok' : 'degraded',
+            timestamp: new Date().toISOString(),
+            db: dbOk ? 'ok' : 'down',
+            redis: redisOk ? 'ok' : 'down',
+        }
+    })
+
+    // ── Readiness probe ──────────────────────────────────────────────────────
+    app.get('/ready', async (_req, reply) => {
+        try {
+            const { sql: dbSql } = await import('./db/db')
+            await dbSql`SELECT 1`
+            const { redis } = await import('./queue/queues')
+            await redis.ping()
+            return { ready: true }
+        } catch {
+            reply.status(503)
+            return { ready: false }
+        }
+    })
 
     // ── Connector API (Steps 8 + 9) ────────────────────────────────────────────
     await app.register(registerRoute)

@@ -1,0 +1,192 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { ERPNextClient, ERPNextError } from './client'
+
+// Mock global fetch
+const mockFetch = vi.fn()
+vi.stubGlobal('fetch', mockFetch)
+
+function jsonResponse(data: unknown, status = 200) {
+    return {
+        ok: status >= 200 && status < 300,
+        status,
+        json: async () => ({ data }),
+    }
+}
+
+function errorResponse(status: number, message: string, serverMessages?: string) {
+    return {
+        ok: false,
+        status,
+        json: async () => ({
+            message,
+            _server_messages: serverMessages,
+        }),
+    }
+}
+
+describe('ERPNextClient', () => {
+    let client: ERPNextClient
+
+    beforeEach(() => {
+        vi.clearAllMocks()
+        client = new ERPNextClient({
+            baseUrl: 'https://erp.example.com',
+            apiKey: 'testkey',
+            apiSecret: 'testsecret',
+        })
+    })
+
+    describe('getDoc', () => {
+        it('fetches a document by doctype and name', async () => {
+            mockFetch.mockResolvedValueOnce(jsonResponse({ name: 'SINV-001', customer: 'Test' }))
+            const doc = await client.getDoc('Sales Invoice', 'SINV-001')
+            expect(doc).toEqual({ name: 'SINV-001', customer: 'Test' })
+            expect(mockFetch).toHaveBeenCalledWith(
+                'https://erp.example.com/api/resource/Sales%20Invoice/SINV-001',
+                expect.objectContaining({ method: 'GET' }),
+            )
+        })
+
+        it('includes authorization header', async () => {
+            mockFetch.mockResolvedValueOnce(jsonResponse({}))
+            await client.getDoc('Customer', 'Test')
+            const callArgs = mockFetch.mock.calls[0][1]
+            expect(callArgs.headers.Authorization).toBe('token testkey:testsecret')
+        })
+    })
+
+    describe('findByTallyGUID', () => {
+        it('returns name when document exists', async () => {
+            mockFetch.mockResolvedValueOnce(jsonResponse([{ name: 'SINV-001' }]))
+            const name = await client.findByTallyGUID('Sales Invoice', 'guid-123')
+            expect(name).toBe('SINV-001')
+        })
+
+        it('returns null when no match', async () => {
+            mockFetch.mockResolvedValueOnce(jsonResponse([]))
+            const name = await client.findByTallyGUID('Sales Invoice', 'guid-missing')
+            expect(name).toBeNull()
+        })
+    })
+
+    describe('createDoc', () => {
+        it('sends POST with custom_sync_source', async () => {
+            mockFetch.mockResolvedValueOnce(jsonResponse({ name: 'SINV-002' }))
+            const result = await client.createDoc<{ name: string }>('Sales Invoice', {
+                customer: 'Test',
+                posting_date: '2024-04-01',
+            })
+            expect(result.name).toBe('SINV-002')
+            const callArgs = mockFetch.mock.calls[0]
+            const body = JSON.parse(callArgs[1].body)
+            expect(body.custom_sync_source).toBe('TALLYBRIDGE')
+        })
+    })
+
+    describe('error handling', () => {
+        it('throws ERPNextError on non-ok response', async () => {
+            mockFetch.mockResolvedValueOnce(errorResponse(404, 'Not Found'))
+            await expect(client.getDoc('Customer', 'Missing')).rejects.toThrow(ERPNextError)
+        })
+
+        it('parses _server_messages JSON-in-JSON', async () => {
+            const serverMsgs = JSON.stringify([JSON.stringify({ message: 'Duplicate entry' })])
+            mockFetch.mockResolvedValueOnce(errorResponse(409, 'Conflict', serverMsgs))
+            try {
+                await client.getDoc('Customer', 'Dup')
+                expect.unreachable('should have thrown')
+            } catch (err) {
+                expect(err).toBeInstanceOf(ERPNextError)
+                expect((err as ERPNextError).message).toContain('Duplicate entry')
+            }
+        })
+
+        it('retries on 429 rate limit', async () => {
+            // First call returns 429, second succeeds
+            mockFetch
+                .mockResolvedValueOnce({
+                    ok: false,
+                    status: 429,
+                    json: async () => ({ message: 'Rate limited' }),
+                })
+                .mockResolvedValueOnce(jsonResponse({ name: 'OK' }))
+
+            const result = await client.getDoc<{ name: string }>('Item', 'Widget')
+            expect(result.name).toBe('OK')
+            expect(mockFetch).toHaveBeenCalledTimes(2)
+        })
+    })
+
+    describe('ensureCustomer', () => {
+        it('creates customer when 404', async () => {
+            // getDoc throws 404
+            mockFetch.mockResolvedValueOnce(errorResponse(404, 'Not Found'))
+            // createDoc succeeds
+            mockFetch.mockResolvedValueOnce(jsonResponse({ name: 'New Customer' }))
+
+            await client.ensureCustomer('New Customer', '33AABCN1234D1ZA')
+
+            // Second call should be POST to create
+            expect(mockFetch).toHaveBeenCalledTimes(2)
+            const createBody = JSON.parse(mockFetch.mock.calls[1][1].body)
+            expect(createBody.customer_name).toBe('New Customer')
+            expect(createBody.gstin).toBe('33AABCN1234D1ZA')
+            expect(createBody.gst_category).toBe('Registered Regular')
+        })
+
+        it('updates GSTIN on existing customer without one', async () => {
+            // getDoc returns customer without GSTIN
+            mockFetch.mockResolvedValueOnce(jsonResponse({ name: 'Existing', gstin: '' }))
+            // updateDoc
+            mockFetch.mockResolvedValueOnce(jsonResponse({ name: 'Existing' }))
+
+            await client.ensureCustomer('Existing', '33AABCE5678E1ZB')
+
+            expect(mockFetch).toHaveBeenCalledTimes(2)
+            const updateBody = JSON.parse(mockFetch.mock.calls[1][1].body)
+            expect(updateBody.gstin).toBe('33AABCE5678E1ZB')
+        })
+
+        it('does nothing if customer exists with GSTIN', async () => {
+            mockFetch.mockResolvedValueOnce(jsonResponse({ name: 'Existing', gstin: '33AABCE5678E1ZB' }))
+            await client.ensureCustomer('Existing', '33AABCE5678E1ZB')
+            expect(mockFetch).toHaveBeenCalledTimes(1) // only the getDoc call
+        })
+    })
+
+    describe('ensureItem', () => {
+        it('creates item with fallback HSN when 404', async () => {
+            mockFetch.mockResolvedValueOnce(errorResponse(404, 'Not Found'))
+            mockFetch.mockResolvedValueOnce(jsonResponse({ name: 'New Item' }))
+
+            await client.ensureItem('New Item')
+
+            const createBody = JSON.parse(mockFetch.mock.calls[1][1].body)
+            expect(createBody.item_code).toBe('New Item')
+            expect(createBody.gst_hsn_code).toBe('999111') // fallback SAC
+            expect(createBody.stock_uom).toBe('Nos')
+        })
+
+        it('uses provided HSN and UOM', async () => {
+            mockFetch.mockResolvedValueOnce(errorResponse(404, 'Not Found'))
+            mockFetch.mockResolvedValueOnce(jsonResponse({ name: 'Widget' }))
+
+            await client.ensureItem('Widget', 'Pcs', '84719000')
+
+            const createBody = JSON.parse(mockFetch.mock.calls[1][1].body)
+            expect(createBody.stock_uom).toBe('Pcs')
+            expect(createBody.gst_hsn_code).toBe('84719000')
+        })
+    })
+
+    describe('submitDoc', () => {
+        it('sends PUT with docstatus 1', async () => {
+            mockFetch.mockResolvedValueOnce(jsonResponse({}))
+            await client.submitDoc('Sales Invoice', 'SINV-001')
+            const callArgs = mockFetch.mock.calls[0]
+            expect(callArgs[1].method).toBe('PUT')
+            const body = JSON.parse(callArgs[1].body)
+            expect(body.docstatus).toBe(1)
+        })
+    })
+})

@@ -37,14 +37,16 @@ interface ConfigWithCreds extends CompanyConfig {
 /**
  * Process one Tally voucher through the full Tally→ERP pipeline.
  */
-export async function processTallyVoucher(
-    voucher: TallyVoucher,
-    config: ConfigWithCreds,
-): Promise<SyncEngineResult> {
+export async function processTallyVoucher(voucher: TallyVoucher, config: ConfigWithCreds): Promise<SyncEngineResult> {
     // Use per-company ERP client if credentials are available, else fall back to env-var singleton
-    const erpClient = (config.erpnextUrl && config.erpnextApiKey && config.erpnextApiSecret)
-        ? new ERPNextClient({ baseUrl: config.erpnextUrl, apiKey: config.erpnextApiKey, apiSecret: config.erpnextApiSecret })
-        : defaultErpClient
+    const erpClient =
+        config.erpnextUrl && config.erpnextApiKey && config.erpnextApiSecret
+            ? new ERPNextClient({
+                  baseUrl: config.erpnextUrl,
+                  apiKey: config.erpnextApiKey,
+                  apiSecret: config.erpnextApiSecret,
+              })
+            : defaultErpClient
     const { guid } = voucher
 
     // PRD rule: skip optional (draft) vouchers — connector should have filtered, double-check here
@@ -71,8 +73,8 @@ export async function processTallyVoucher(
         await recordConflict(config.companyId, guid, voucher, erpDoc)
 
         // Apply conflict resolution strategy
-        const strategy = config.conflictStrategy.perDoctype?.[conflict.erpnextDoctype!]
-            ?? config.conflictStrategy.default
+        const strategy =
+            config.conflictStrategy.perDoctype?.[conflict.erpnextDoctype!] ?? config.conflictStrategy.default
 
         if (strategy === 'MANUAL' || strategy === 'ERP_WINS') {
             return { guid, status: 'conflict', erpName: conflict.erpnextName }
@@ -153,7 +155,10 @@ export async function processTallyVoucher(
                 logger.info({ guid, erpName, doctype }, 'Doc already exists in ERPNext — skipping create')
             } else {
                 // New document
-                const created = await erpClient.createDoc<{ name: string }>(doctype, result.doc as unknown as Record<string, unknown>)
+                const created = await erpClient.createDoc<{ name: string }>(
+                    doctype,
+                    result.doc as unknown as Record<string, unknown>,
+                )
                 erpName = created.name
                 // Auto-submit if configured
                 await erpClient.submitDoc(doctype, erpName)

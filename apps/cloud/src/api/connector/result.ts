@@ -67,11 +67,11 @@ export const resultRoute: FastifyPluginAsync = async (fastify) => {
 
             logger.info(
                 { jobId: body.jobId, status: body.status, companyId: body.companyId },
-                'Connector sync result received'
+                'Connector sync result received',
             )
 
             return reply.send({ ok: true })
-        }
+        },
     )
 }
 
@@ -114,6 +114,6 @@ export const exceptionRoute: FastifyPluginAsync = async (fastify) => {
             })
 
             return reply.code(201).send({ ok: true })
-        }
+        },
     )
 }

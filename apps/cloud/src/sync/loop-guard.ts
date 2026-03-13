@@ -13,7 +13,7 @@ import { redis } from '../queue/queues'
 import { logger } from '../lib/logger'
 
 const PREFIX = 'tb:guard:'
-const TTL_SECONDS = 120  // 2 minutes — covers any poll interval
+const TTL_SECONDS = 120 // 2 minutes — covers any poll interval
 
 /**
  * Mark a GUID as "written by us" before shipping to connector.

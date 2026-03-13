@@ -59,10 +59,10 @@ export const registerRoute: FastifyPluginAsync = async (fastify) => {
             // Seed / update config_profile with mapping configs from connector.
             // Pass raw objects (not JSON.stringify'd) to avoid JSONB double-encoding.
             const mc = body.mappingConfigs ?? {}
-            const acctMap  = (mc.account_coa  as Record<string,unknown>) ?? {}
-            const gstMap   = (mc.gst_ledger   as Record<string,unknown>) ?? {}
-            const vtMap    = (mc.voucher_type  as Record<string,unknown>) ?? {}
-            const sdMap    = (mc.sync_direction as Record<string,unknown>) ?? {}
+            const acctMap = (mc.account_coa as Record<string, unknown>) ?? {}
+            const gstMap = (mc.gst_ledger as Record<string, unknown>) ?? {}
+            const vtMap = (mc.voucher_type as Record<string, unknown>) ?? {}
+            const sdMap = (mc.sync_direction as Record<string, unknown>) ?? {}
 
             await sql`
           INSERT INTO config_profiles (
@@ -90,6 +90,6 @@ export const registerRoute: FastifyPluginAsync = async (fastify) => {
                     jobsEndpoint: '/connector/jobs/pending',
                 },
             })
-        }
+        },
     )
 }

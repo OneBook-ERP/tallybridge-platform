@@ -59,6 +59,6 @@ export const heartbeatRoute: FastifyPluginAsync = async (fastify) => {
             logger.debug({ companyId: body.companyId, tallyStatus: body.tallyStatus }, 'Heartbeat received')
 
             return reply.code(200).send({ ok: true })
-        }
+        },
     )
 }

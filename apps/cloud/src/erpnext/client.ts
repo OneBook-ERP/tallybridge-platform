@@ -25,17 +25,12 @@ export class ERPNextClient {
         this.authHeader = `token ${key}:${secret}`
     }
 
-    private async request<T>(
-        method: HTTPMethod,
-        path: string,
-        body?: unknown,
-        retries = 3
-    ): Promise<T> {
+    private async request<T>(method: HTTPMethod, path: string, body?: unknown, retries = 3): Promise<T> {
         const url = `${this.baseUrl}${path}`
         const init: RequestInit = {
             method,
             headers: {
-                'Authorization': this.authHeader,
+                Authorization: this.authHeader,
                 'Content-Type': 'application/json',
             },
             body: body ? JSON.stringify(body) : undefined,
@@ -52,7 +47,7 @@ export class ERPNextClient {
                 continue
             }
 
-            const json = await res.json() as { data?: T; message?: string; exc?: string; _server_messages?: string }
+            const json = (await res.json()) as { data?: T; message?: string; exc?: string; _server_messages?: string }
 
             if (!res.ok) {
                 // ERPNext puts errors in _server_messages as a JSON-encoded array of JSON strings
@@ -60,9 +55,21 @@ export class ERPNextClient {
                 if (json._server_messages) {
                     try {
                         const msgs = JSON.parse(json._server_messages) as string[]
-                        const parsed = msgs.map(m => { try { return JSON.parse(m) } catch { return { message: m } } })
-                        errMsg = parsed.map((p: { message?: string }) => p.message).filter(Boolean).join('; ') || errMsg
-                    } catch { /* keep original errMsg */ }
+                        const parsed = msgs.map((m) => {
+                            try {
+                                return JSON.parse(m)
+                            } catch {
+                                return { message: m }
+                            }
+                        })
+                        errMsg =
+                            parsed
+                                .map((p: { message?: string }) => p.message)
+                                .filter(Boolean)
+                                .join('; ') || errMsg
+                    } catch {
+                        /* keep original errMsg */
+                    }
                 }
                 throw new ERPNextError(res.status, errMsg, url)
             }
@@ -81,7 +88,7 @@ export class ERPNextClient {
         // request() extracts json.data, so result is the array directly
         const results = await this.request<Array<{ name: string }>>(
             'GET',
-            `/api/resource/${encodeURIComponent(doctype)}?filters=[["custom_tally_guid","=","${guid}"]]&fields=["name"]&limit_page_length=1`
+            `/api/resource/${encodeURIComponent(doctype)}?filters=[["custom_tally_guid","=","${guid}"]]&fields=["name"]&limit_page_length=1`,
         )
         return (results as Array<{ name: string }>)?.[0]?.name ?? null
     }
@@ -91,7 +98,7 @@ export class ERPNextClient {
     async createDoc<T>(doctype: string, doc: Record<string, unknown>): Promise<T> {
         return this.request<T>('POST', `/api/resource/${encodeURIComponent(doctype)}`, {
             ...doc,
-            custom_sync_source: 'TALLYBRIDGE',  // loop guard
+            custom_sync_source: 'TALLYBRIDGE', // loop guard
         })
     }
 
@@ -107,9 +114,10 @@ export class ERPNextClient {
         // 1. Cancel the original
         await this.request('POST', `/api/method/frappe.client.cancel`, { doctype, name })
         // 2. Amend — creates a new doc linked via amended_from
-        const amended = await this.request<{ name: string }>(
-            'POST', `/api/method/frappe.client.amend_doc`, { doctype, name }
-        )
+        const amended = await this.request<{ name: string }>('POST', `/api/method/frappe.client.amend_doc`, {
+            doctype,
+            name,
+        })
         const amendedName = amended.name
         // 3. Apply updates and submit
         await this.updateDoc(doctype, amendedName, updates)
@@ -191,7 +199,7 @@ export class ERPNextClient {
                     item_group: 'All Item Groups',
                     stock_uom: uom || 'Nos',
                     is_stock_item: 1,
-                    gst_hsn_code: hsnCode || '999111',  // fallback SAC — India Compliance requires 6+ digit HSN
+                    gst_hsn_code: hsnCode || '999111', // fallback SAC — India Compliance requires 6+ digit HSN
                 })
                 logger.info({ itemCode }, 'Auto-created Item in ERPNext')
             }
@@ -206,10 +214,10 @@ export class ERPNextClient {
         }
         const url = `${this.baseUrl}/api/method/frappe.client.get_count?${params.toString()}`
         const res = await fetch(url, {
-            headers: { 'Authorization': this.authHeader },
+            headers: { Authorization: this.authHeader },
         })
         if (!res.ok) return 0
-        const json = await res.json() as { message?: number }
+        const json = (await res.json()) as { message?: number }
         return json.message ?? 0
     }
 
@@ -221,14 +229,18 @@ export class ERPNextClient {
 }
 
 export class ERPNextError extends Error {
-    constructor(public readonly status: number, message: string, public readonly url: string) {
+    constructor(
+        public readonly status: number,
+        message: string,
+        public readonly url: string,
+    ) {
         super(message)
         this.name = 'ERPNextError'
     }
 }
 
 function delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms))
+    return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 // Default singleton — used by the sync engine.

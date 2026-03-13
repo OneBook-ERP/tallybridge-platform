@@ -2,24 +2,29 @@
  * Step 13 — Tally Purchase/Debit Note → ERPNext Purchase Invoice
  */
 import type {
-    TallyVoucher, CompanyConfig,
-    ERPNextPurchaseInvoice, PurchaseInvoiceItem, TransformResult,
+    TallyVoucher,
+    CompanyConfig,
+    ERPNextPurchaseInvoice,
+    PurchaseInvoiceItem,
+    TransformResult,
 } from '../../types'
 import { resolveAccount, isTransformError } from '../account-resolver'
 import { resolveGST } from '../gst-resolver'
 import { tallyDateToErp, absAmount, roundInr, sanitiseName, stateFromGstin } from '../utils'
 
-const FALLBACK_STATE = 'Tamil Nadu'  // only used if neither GSTIN nor config.defaultState is set
+const FALLBACK_STATE = 'Tamil Nadu' // only used if neither GSTIN nor config.defaultState is set
 
 export function transformPurchase(
     voucher: TallyVoucher,
-    config: CompanyConfig
+    config: CompanyConfig,
 ): TransformResult<ERPNextPurchaseInvoice> {
     const warnings: string[] = []
-    const isReturn = voucher.voucherTypeName.toLowerCase().includes('debit') ||
+    const isReturn =
+        voucher.voucherTypeName.toLowerCase().includes('debit') ||
         voucher.voucherTypeName.toLowerCase().includes('return')
 
-    const companyState = (config.companyGstin ? stateFromGstin(config.companyGstin) : null) ?? config.defaultState ?? FALLBACK_STATE
+    const companyState =
+        (config.companyGstin ? stateFromGstin(config.companyGstin) : null) ?? config.defaultState ?? FALLBACK_STATE
     const gst = resolveGST({ voucher, config, companyState })
 
     const items: PurchaseInvoiceItem[] = []
@@ -29,7 +34,7 @@ export function transformPurchase(
             : resolveAccount(inv.stockItemName, config)
         const actualAcct = !isTransformError(expAcct)
             ? expAcct.account
-            : config.accountMappings['Default Purchase'] ?? 'Cost of Goods Sold'
+            : (config.accountMappings['Default Purchase'] ?? 'Cost of Goods Sold')
 
         items.push({
             item_code: sanitiseName(inv.stockItemName),

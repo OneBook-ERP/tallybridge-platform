@@ -64,7 +64,12 @@ describe('transformPurchase', () => {
         const voucher = makePurchaseVoucher({
             inventoryEntries: [],
             ledgerEntries: [
-                makeLedgerEntry({ ledgerName: 'Supplier XYZ', isPartyLedger: true, isDeemedPositive: false, amount: -10000 }),
+                makeLedgerEntry({
+                    ledgerName: 'Supplier XYZ',
+                    isPartyLedger: true,
+                    isDeemedPositive: false,
+                    amount: -10000,
+                }),
                 makeLedgerEntry({ ledgerName: 'B2B Purchase', isDeemedPositive: true, amount: 10000 }),
             ],
         })
@@ -92,7 +97,12 @@ describe('transformPurchase', () => {
         const voucher = makePurchaseVoucher({
             inventoryEntries: [],
             ledgerEntries: [
-                makeLedgerEntry({ ledgerName: 'Supplier XYZ', isPartyLedger: true, isDeemedPositive: false, amount: -5000 }),
+                makeLedgerEntry({
+                    ledgerName: 'Supplier XYZ',
+                    isPartyLedger: true,
+                    isDeemedPositive: false,
+                    amount: -5000,
+                }),
                 makeLedgerEntry({ ledgerName: 'Unknown Expense', isDeemedPositive: true, amount: 5000 }),
             ],
         })

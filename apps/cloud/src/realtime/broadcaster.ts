@@ -37,11 +37,7 @@ class Broadcaster extends EventEmitter {
      * Subscribe a callback to events for a specific company.
      * Returns the unsubscribe function — call it when the WebSocket closes.
      */
-    subscribe(
-        companyId: string,
-        event: BroadcastEvent,
-        handler: (data: Record<string, unknown>) => void
-    ): () => void {
+    subscribe(companyId: string, event: BroadcastEvent, handler: (data: Record<string, unknown>) => void): () => void {
         const key = `${companyId}:${event}`
         this.on(key, handler)
         return () => this.off(key, handler)

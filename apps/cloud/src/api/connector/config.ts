@@ -40,22 +40,32 @@ function stripMetaKeys(obj: Record<string, unknown>): Record<string, unknown> {
  *  Accepts display names like "Output Tax CGST" → "output_cgst" */
 function normalizeGSTKeys(raw: Record<string, unknown>): Record<string, string> {
     const GST_KEY_MAP: Record<string, string> = {
-        'output_cgst': 'output_cgst', 'output_sgst': 'output_sgst', 'output_igst': 'output_igst',
-        'input_cgst': 'input_cgst', 'input_sgst': 'input_sgst', 'input_igst': 'input_igst',
+        output_cgst: 'output_cgst',
+        output_sgst: 'output_sgst',
+        output_igst: 'output_igst',
+        input_cgst: 'input_cgst',
+        input_sgst: 'input_sgst',
+        input_igst: 'input_igst',
     }
     const result: Record<string, string> = {}
     for (const [k, v] of Object.entries(raw)) {
         if (k.startsWith('_')) continue
         const val = typeof v === 'string' ? v : ''
-        if (!val) continue  // skip empty values
+        if (!val) continue // skip empty values
         // Already snake_case?
-        if (GST_KEY_MAP[k]) { result[k] = val; continue }
+        if (GST_KEY_MAP[k]) {
+            result[k] = val
+            continue
+        }
         // Try to detect from display name: "Output Tax CGST" → output_cgst
         const lower = k.toLowerCase()
         const isOutput = lower.includes('output') || lower.includes('sales')
         const isInput = lower.includes('input') || lower.includes('purchase')
         const direction = isInput ? 'input' : isOutput ? 'output' : null
-        if (!direction) { result[k] = val; continue }
+        if (!direction) {
+            result[k] = val
+            continue
+        }
         if (lower.includes('cgst')) result[`${direction}_cgst`] = val
         else if (lower.includes('sgst') || lower.includes('utgst')) result[`${direction}_sgst`] = val
         else if (lower.includes('igst')) result[`${direction}_igst`] = val
@@ -109,6 +119,6 @@ export const configRoute: FastifyPluginAsync = async (fastify) => {
 
             logger.info({ companyId: body.companyId }, 'Connector config updated')
             return reply.send({ ok: true })
-        }
+        },
     )
 }

@@ -31,15 +31,10 @@ async function run(): Promise<void> {
     `)
 
         const migrationsDir = join(__dirname, 'migrations')
-        const files = (await readdir(migrationsDir))
-            .filter((f) => f.endsWith('.sql'))
-            .sort()
+        const files = (await readdir(migrationsDir)).filter((f) => f.endsWith('.sql')).sort()
 
         for (const file of files) {
-            const existing = await sql.unsafe(
-                `SELECT 1 FROM schema_migrations WHERE filename = $1`,
-                [file]
-            )
+            const existing = await sql.unsafe(`SELECT 1 FROM schema_migrations WHERE filename = $1`, [file])
             if (existing.length > 0) {
                 console.log(`  ✓ ${file} (already applied)`)
                 continue
@@ -49,10 +44,7 @@ async function run(): Promise<void> {
 
             // Run migration + tracking insert together in a single unsafe call sequence.
             await sql.unsafe(content)
-            await sql.unsafe(
-                `INSERT INTO schema_migrations (filename) VALUES ($1)`,
-                [file]
-            )
+            await sql.unsafe(`INSERT INTO schema_migrations (filename) VALUES ($1)`, [file])
 
             console.log(`  ✅ ${file} applied`)
         }

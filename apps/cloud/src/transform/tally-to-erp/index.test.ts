@@ -1,6 +1,14 @@
 import { describe, it, expect } from 'vitest'
 import { transformVoucher } from './index'
-import { makeConfig, makeSalesVoucher, makePurchaseVoucher, makePaymentVoucher, makeReceiptVoucher, makeJournalVoucher, makeVoucher } from '../../test/fixtures'
+import {
+    makeConfig,
+    makeSalesVoucher,
+    makePurchaseVoucher,
+    makePaymentVoucher,
+    makeReceiptVoucher,
+    makeJournalVoucher,
+    makeVoucher,
+} from '../../test/fixtures'
 
 describe('transformVoucher router', () => {
     const config = makeConfig()

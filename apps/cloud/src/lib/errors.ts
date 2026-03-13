@@ -50,7 +50,7 @@ export class RateLimitError extends AppError {
 export function errorHandler(
     error: Error & { statusCode?: number; code?: string; issues?: unknown[] },
     _request: unknown,
-    reply: { code: (n: number) => { send: (b: unknown) => void } }
+    reply: { code: (n: number) => { send: (b: unknown) => void } },
 ): void {
     if (error instanceof AppError) {
         reply.code(error.statusCode).send({

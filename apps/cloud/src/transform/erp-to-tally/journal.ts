@@ -8,12 +8,12 @@ import type { TallyVoucherInput, TallyLedgerEntryInput } from './sales'
 export function erpJournalToTally(
     doc: ERPNextJournalEntry,
     config: CompanyConfig,
-    action: 'CREATE' | 'ALTER' | 'CANCEL' = 'CREATE'
+    action: 'CREATE' | 'ALTER' | 'CANCEL' = 'CREATE',
 ): TallyVoucherInput {
     const isContra = doc.voucher_type === 'Bank Entry' || doc.voucher_type === 'Contra Entry'
     const voucherType = isContra ? 'Contra' : 'Journal'
 
-    const ledgerEntries: TallyLedgerEntryInput[] = doc.accounts.map(acct => {
+    const ledgerEntries: TallyLedgerEntryInput[] = doc.accounts.map((acct) => {
         const isDebit = acct.debit_in_account_currency > 0
         const amount = roundInr(isDebit ? acct.debit_in_account_currency : acct.credit_in_account_currency)
         const tallyLedger = reverseMapAccount(acct.account, config)
@@ -27,14 +27,17 @@ export function erpJournalToTally(
     })
 
     return {
-        action, guid: doc.custom_tally_guid ?? `ERP-${doc.name}`,
-        voucherType, objView: 'Accounting Voucher View',
+        action,
+        guid: doc.custom_tally_guid ?? `ERP-${doc.name}`,
+        voucherType,
+        objView: 'Accounting Voucher View',
         date: erpDateToTally(doc.posting_date),
         voucherNumber: doc.name ?? '',
         partyLedgerName: '',
         narration: doc.user_remark,
         isInvoice: false,
-        ledgerEntries, inventoryEntries: [],
+        ledgerEntries,
+        inventoryEntries: [],
     }
 }
 

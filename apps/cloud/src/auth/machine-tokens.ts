@@ -65,7 +65,7 @@ import type { FastifyRequest, FastifyReply } from 'fastify'
 
 export async function requireConnectorAuth(
     request: FastifyRequest & { connectorIdentity?: ConnectorIdentity },
-    reply: FastifyReply
+    reply: FastifyReply,
 ): Promise<void> {
     const auth = request.headers.authorization
     if (!auth || !auth.startsWith('Bearer ')) {

@@ -37,8 +37,8 @@ describe('transformJournal', () => {
 
         expect(result.doc.accounts).toHaveLength(2)
 
-        const debitEntry = result.doc.accounts.find(a => a.debit_in_account_currency > 0)
-        const creditEntry = result.doc.accounts.find(a => a.credit_in_account_currency > 0)
+        const debitEntry = result.doc.accounts.find((a) => a.debit_in_account_currency > 0)
+        const creditEntry = result.doc.accounts.find((a) => a.credit_in_account_currency > 0)
 
         expect(debitEntry).toBeDefined()
         expect(creditEntry).toBeDefined()
@@ -85,16 +85,14 @@ describe('transformJournal', () => {
 
         expect(result.success).toBe(true)
         if (!result.success) return
-        const partyAccount = result.doc.accounts.find(a => a.party)
+        const partyAccount = result.doc.accounts.find((a) => a.party)
         expect(partyAccount).toBeDefined()
         expect(partyAccount!.party).toBe('Customer ABC')
     })
 
     it('fails when all entries are filtered out', () => {
         const voucher = makeJournalVoucher({
-            ledgerEntries: [
-                makeLedgerEntry({ ledgerName: 'Round Off', isDeemedPositive: true, amount: 0.3 }),
-            ],
+            ledgerEntries: [makeLedgerEntry({ ledgerName: 'Round Off', isDeemedPositive: true, amount: 0.3 })],
         })
         const result = transformJournal(voucher, config)
 

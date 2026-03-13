@@ -50,7 +50,10 @@ export function wakeConnector(companyId: string, jobs: PendingJob[]): void {
 // ── Query Schema ───────────────────────────────────────────────────────────────
 const JobsQuerySchema = z.object({
     companyId: z.string().uuid(),
-    timeout: z.string().optional().transform((v) => Math.min(30, Math.max(1, Number(v ?? '30')))),
+    timeout: z
+        .string()
+        .optional()
+        .transform((v) => Math.min(30, Math.max(1, Number(v ?? '30')))),
 })
 
 type AuthedRequest = FastifyRequest & { connectorIdentity?: ConnectorIdentity }
@@ -110,6 +113,6 @@ export const jobsRoute: FastifyPluginAsync = async (fastify) => {
             })
 
             return reply.send({ jobs })
-        }
+        },
     )
 }

@@ -29,6 +29,29 @@ services:
       timeout: 3s
       retries: 5
 
+  cloud:
+    build: .
+    container_name: tallybridge-cloud
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://tallybridge:tallybridge_dev@postgres:5432/tallybridge
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production-at-least-32-chars}
+      NODE_ENV: production
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    profiles:
+      - prod
+
 volumes:
   postgres_data:
   redis_data:

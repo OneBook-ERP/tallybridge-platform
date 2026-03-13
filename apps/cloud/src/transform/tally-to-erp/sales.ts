@@ -1,28 +1,24 @@
 /**
  * Step 13 — Tally Sales/Credit Note → ERPNext Sales Invoice
  */
-import type {
-    TallyVoucher, CompanyConfig,
-    ERPNextSalesInvoice, SalesInvoiceItem, TransformResult,
-} from '../../types'
+import type { TallyVoucher, CompanyConfig, ERPNextSalesInvoice, SalesInvoiceItem, TransformResult } from '../../types'
 import { resolveAccount, isTransformError } from '../account-resolver'
 import { resolveGST } from '../gst-resolver'
 import { tallyDateToErp, absAmount, roundInr, sanitiseName, isRoundOff, stateFromGstin } from '../utils'
 
-const FALLBACK_STATE = 'Tamil Nadu'  // only used if neither GSTIN nor config.defaultState is set
+const FALLBACK_STATE = 'Tamil Nadu' // only used if neither GSTIN nor config.defaultState is set
 
-export function transformSales(
-    voucher: TallyVoucher,
-    config: CompanyConfig
-): TransformResult<ERPNextSalesInvoice> {
+export function transformSales(voucher: TallyVoucher, config: CompanyConfig): TransformResult<ERPNextSalesInvoice> {
     const warnings: string[] = []
 
     // Determine if credit note (Sales Return)
-    const isReturn = voucher.voucherTypeName.toLowerCase().includes('return') ||
+    const isReturn =
+        voucher.voucherTypeName.toLowerCase().includes('return') ||
         voucher.voucherTypeName.toLowerCase().includes('credit')
 
     // Derive company state from GSTIN if available
-    const companyState = (config.companyGstin ? stateFromGstin(config.companyGstin) : null) ?? config.defaultState ?? FALLBACK_STATE
+    const companyState =
+        (config.companyGstin ? stateFromGstin(config.companyGstin) : null) ?? config.defaultState ?? FALLBACK_STATE
 
     // GST analysis
     const gst = resolveGST({
@@ -51,7 +47,9 @@ export function transformSales(
             ? resolveAccount(inv.accountLedgerName, config)
             : resolveAccount(inv.stockItemName, config)
 
-        const actualAcct = !isTransformError(incomeAcct) ? incomeAcct.account : config.accountMappings['Default Income'] ?? 'Sales'
+        const actualAcct = !isTransformError(incomeAcct)
+            ? incomeAcct.account
+            : (config.accountMappings['Default Income'] ?? 'Sales')
 
         items.push({
             item_code: sanitiseName(inv.stockItemName),

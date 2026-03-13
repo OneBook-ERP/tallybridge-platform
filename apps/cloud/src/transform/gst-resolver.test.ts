@@ -59,12 +59,12 @@ describe('resolveGST', () => {
     })
 
     it('builds tax lines from GST ledger entries', () => {
-        const voucher = makeVoucher()  // has Output CGST 9% and Output SGST 9% entries
+        const voucher = makeVoucher() // has Output CGST 9% and Output SGST 9% entries
         const result = resolveGST({ voucher, config, companyState })
 
         expect(result.taxLines.length).toBeGreaterThanOrEqual(2)
-        const cgstLine = result.taxLines.find(t => t.account_head === 'Output Tax CGST - TC')
-        const sgstLine = result.taxLines.find(t => t.account_head === 'Output Tax SGST - TC')
+        const cgstLine = result.taxLines.find((t) => t.account_head === 'Output Tax CGST - TC')
+        const sgstLine = result.taxLines.find((t) => t.account_head === 'Output Tax SGST - TC')
         expect(cgstLine).toBeDefined()
         expect(sgstLine).toBeDefined()
         expect(cgstLine!.tax_amount).toBe(900)
@@ -75,7 +75,7 @@ describe('resolveGST', () => {
         const voucher = makeVoucher()
         const result = resolveGST({ voucher, config, companyState })
 
-        const cgstLine = result.taxLines.find(t => t.account_head === 'Output Tax CGST - TC')
+        const cgstLine = result.taxLines.find((t) => t.account_head === 'Output Tax CGST - TC')
         expect(cgstLine!.rate).toBe(9)
     })
 

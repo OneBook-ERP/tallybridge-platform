@@ -130,22 +130,32 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
         }
 
         // ERPNext side: count documents by doctype
-        const doctypes = ['Item', 'Customer', 'Supplier', 'Sales Invoice', 'Purchase Invoice', 'Journal Entry', 'Payment Entry']
+        const doctypes = [
+            'Item',
+            'Customer',
+            'Supplier',
+            'Sales Invoice',
+            'Purchase Invoice',
+            'Journal Entry',
+            'Payment Entry',
+        ]
         const erpCounts: Record<string, number> = {}
 
         const companyFilter = erpnextCompany ? [['company', '=', erpnextCompany]] : undefined
 
-        await Promise.all(doctypes.map(async (dt) => {
-            try {
-                // Masters (Item, Customer, Supplier) don't have company or custom_sync_source fields
-                const isMaster = ['Item', 'Customer', 'Supplier'].includes(dt)
-                const filters = isMaster ? [] : (companyFilter ?? [])
-                erpCounts[dt] = await erpClient.countDocs(dt, filters.length > 0 ? filters : undefined)
-            } catch (err) {
-                logger.warn({ doctype: dt, err }, 'Failed to count ERPNext docs')
-                erpCounts[dt] = -1 // indicates error
-            }
-        }))
+        await Promise.all(
+            doctypes.map(async (dt) => {
+                try {
+                    // Masters (Item, Customer, Supplier) don't have company or custom_sync_source fields
+                    const isMaster = ['Item', 'Customer', 'Supplier'].includes(dt)
+                    const filters = isMaster ? [] : (companyFilter ?? [])
+                    erpCounts[dt] = await erpClient.countDocs(dt, filters.length > 0 ? filters : undefined)
+                } catch (err) {
+                    logger.warn({ doctype: dt, err }, 'Failed to count ERPNext docs')
+                    erpCounts[dt] = -1 // indicates error
+                }
+            }),
+        )
 
         // Build comparison rows
         const categories = [
@@ -158,7 +168,7 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
             { label: 'Payment Entries', doctype: 'Payment Entry', tallyKey: 'Payment Entry' },
         ]
 
-        const comparison = categories.map(cat => ({
+        const comparison = categories.map((cat) => ({
             label: cat.label,
             doctype: cat.doctype,
             tallySynced: tallyByType[cat.tallyKey] ?? 0,
@@ -169,7 +179,9 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
             comparison,
             exceptions: exceptionsByCode,
             totalTallySynced: Object.values(tallyByType).reduce((a, b) => a + b, 0),
-            totalErpNext: Object.values(erpCounts).filter(v => v >= 0).reduce((a, b) => a + b, 0),
+            totalErpNext: Object.values(erpCounts)
+                .filter((v) => v >= 0)
+                .reduce((a, b) => a + b, 0),
         }
     })
 }
