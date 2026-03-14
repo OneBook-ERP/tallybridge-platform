@@ -13,7 +13,10 @@ export interface ERPNextSalesInvoice {
     company: string
     posting_date: string // "YYYY-MM-DD"
     due_date?: string
+    set_posting_time?: 0 | 1 // allow backdated posting
     bill_no?: string // Tally voucher number
+    update_stock?: 0 | 1 // direct stock movement without Delivery Note
+    set_warehouse?: string // default warehouse for all items
     is_return: 0 | 1
     return_against?: string // name of original SI for credit notes
     currency: string // "INR" default
@@ -48,6 +51,7 @@ export interface SalesInvoiceItem {
     rate: number
     amount: number
     income_account: string
+    warehouse?: string
     cost_center?: string
     gst_hsn_code?: string
     is_nil_exempt?: 0 | 1
@@ -71,8 +75,12 @@ export interface ERPNextPurchaseInvoice {
     supplier: string
     company: string
     posting_date: string
+    due_date?: string
     bill_date?: string // supplier's invoice date
     bill_no?: string // supplier's invoice number
+    set_posting_time?: 0 | 1
+    update_stock?: 0 | 1 // direct stock movement without Purchase Receipt
+    set_warehouse?: string
     is_return: 0 | 1
     return_against?: string
     currency: string
@@ -105,6 +113,7 @@ export interface PurchaseInvoiceItem {
     rate: number
     amount: number
     expense_account: string
+    warehouse?: string
     cost_center?: string
     gst_hsn_code?: string
 }
@@ -136,6 +145,7 @@ export interface ERPNextPaymentEntry {
     cost_center?: string
     company_gstin?: string
     custom_tally_guid?: string
+    custom_tally_voucher_number?: string
     custom_sync_source?: 'TALLYBRIDGE'
 }
 
@@ -162,6 +172,7 @@ export interface ERPNextJournalEntry {
     total_credit: number
     company_gstin?: string
     custom_tally_guid?: string
+    custom_tally_voucher_number?: string
     custom_sync_source?: 'TALLYBRIDGE'
 }
 

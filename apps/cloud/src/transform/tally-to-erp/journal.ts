@@ -48,16 +48,23 @@ export function transformJournal(voucher: TallyVoucher, config: CompanyConfig): 
             credit_in_account_currency: cr,
         }
 
-        // Party ledger? Attach party details for sub-ledger tracking
+        // Party ledger? Attach party details — but ONLY on Receivable/Payable accounts.
+        // ERPNext rejects party on non-Receivable/Payable accounts.
         if (le.isPartyLedger || resolved.isPartyFallback) {
-            // Prefer voucher-level partyLedgerName when the entry's ledger is an
-            // account (e.g. "B2B Sales") rather than the actual party name.
-            const partyName =
-                voucher.partyLedgerName && le.ledgerName !== voucher.partyLedgerName
-                    ? voucher.partyLedgerName
-                    : le.ledgerName
-            jAccount.party = sanitiseName(partyName)
-            jAccount.party_type = le.isDeemedPositive ? 'Customer' : 'Supplier'
+            const acctLower = resolved.account.toLowerCase()
+            const isReceivablePayable =
+                acctLower.includes('debtor') ||
+                acctLower.includes('creditor') ||
+                acctLower.includes('receivable') ||
+                acctLower.includes('payable')
+            if (isReceivablePayable) {
+                const partyName =
+                    voucher.partyLedgerName && le.ledgerName !== voucher.partyLedgerName
+                        ? voucher.partyLedgerName
+                        : le.ledgerName
+                jAccount.party = sanitiseName(partyName)
+                jAccount.party_type = le.isDeemedPositive ? 'Customer' : 'Supplier'
+            }
         }
 
         accounts.push(jAccount)
@@ -70,6 +77,34 @@ export function transformJournal(voucher: TallyVoucher, config: CompanyConfig): 
         }
     }
 
+    // Balance rounding difference — ERPNext requires exact debit == credit
+    const roundedDebit = roundInr(totalDebit)
+    const roundedCredit = roundInr(totalCredit)
+    const diff = roundInr(roundedDebit - roundedCredit)
+    if (diff !== 0 && Math.abs(diff) <= 1) {
+        // Small rounding difference — adjust the larger side
+        if (diff > 0) {
+            // Debit is larger — add credit adjustment to last credit entry
+            const lastCredit = [...accounts].reverse().find((a) => a.credit_in_account_currency > 0)
+            if (lastCredit) lastCredit.credit_in_account_currency = roundInr(lastCredit.credit_in_account_currency + diff)
+        } else {
+            // Credit is larger — add debit adjustment to last debit entry
+            const lastDebit = [...accounts].reverse().find((a) => a.debit_in_account_currency > 0)
+            if (lastDebit) lastDebit.debit_in_account_currency = roundInr(lastDebit.debit_in_account_currency - diff)
+        }
+        warnings.push(`Adjusted rounding difference of ₹${Math.abs(diff)} to balance journal`)
+    }
+
+    let balancedDebit = roundInr(accounts.reduce((s, a) => s + a.debit_in_account_currency, 0))
+    let balancedCredit = roundInr(accounts.reduce((s, a) => s + a.credit_in_account_currency, 0))
+
+    // Final safety: if floating-point summation still leaves a tiny diff, force-align
+    if (balancedDebit !== balancedCredit && Math.abs(balancedDebit - balancedCredit) <= 1) {
+        const max = Math.max(balancedDebit, balancedCredit)
+        balancedDebit = max
+        balancedCredit = max
+    }
+
     const doc: ERPNextJournalEntry = {
         doctype: 'Journal Entry',
         voucher_type: voucherType,
@@ -77,10 +112,11 @@ export function transformJournal(voucher: TallyVoucher, config: CompanyConfig): 
         company: config.erpnextCompany,
         user_remark: voucher.narration || undefined,
         accounts,
-        total_debit: roundInr(totalDebit),
-        total_credit: roundInr(totalCredit),
+        total_debit: balancedDebit,
+        total_credit: balancedCredit,
         company_gstin: config.companyGstin || undefined,
         custom_tally_guid: voucher.guid,
+        custom_tally_voucher_number: voucher.voucherNumber,
         custom_sync_source: 'TALLYBRIDGE',
     }
 

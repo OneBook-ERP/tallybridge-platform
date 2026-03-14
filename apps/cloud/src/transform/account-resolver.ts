@@ -101,7 +101,7 @@ function resolveAsParty(config: CompanyConfig, direction?: 'debtor' | 'creditor'
  * Party names (company/person names) won't contain these keywords.
  */
 const EXPENSE_KEYWORDS =
-    /\b(charges?|expenses?|interest|tax|depreciation|rent|salary|insurance|dut(?:y|ies)|cess|income|payable|receivable|provision|advance\s+tax|tds|tcs|assets?\s+dep|maintena?n[cs]e|stall|warehouse|service\s+charge|transaction\s+fee|membership|consumable|staff\s*welfare|bonus|commission|revenue|account|ledger|discount|freight|packing|loading|unloading|clearing|forwarding|brokerage|bad\s+debts?|sundry|misc|general|opening|closing|stock|cash|bank|capital|reserve|profit|loss|suspense|control)\b/i
+    /\b(charges?|expenses?|interest|tax|depreciation|rent|salary|insurance|dut(?:y|ies)|cess|income|payable|receivable|provision|advance\s+tax|tds|tcs|assets?\s+dep|maintena?n[cs]e|stall|warehouse|service\s+charge|transaction\s+fee|membership|consumable|staff\s*welfare|bonus|commission|revenue|account|ledger|discount|freight|packing|loading|unloading|clearing|forwarding|brokerage|bad\s+debts?|sundry|misc|general|opening|closing|stock|cash|bank|capital|reserve|profit|loss|suspense|control|destuffing|examination|customs|formalities|container|audit|legal|petrol|diesel|courier|postage|electricity|water|telephone|mobile|printing|stationery|donation|penalty|fine)\b/i
 
 /** Derive company abbreviation suffix from company name (e.g. "Acme Corp Ltd" → "ACL") */
 function deriveCompanySuffix(company: string): string {

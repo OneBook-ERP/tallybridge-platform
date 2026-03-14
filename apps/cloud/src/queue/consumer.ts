@@ -6,6 +6,7 @@ import { redisOpts, type SyncJobData, type TallyWriteJobData, type SyncJobName, 
 import { processTallyVoucher } from '../sync/engine'
 import { normalizeVoucher } from '../transform/normalize'
 import { broadcaster } from '../realtime/broadcaster'
+import { ERPNextClient } from '../erpnext/client'
 import { sql } from '../db/db'
 import { logger } from '../lib/logger'
 import type { TallyVoucher, CompanyConfig } from '../types'
@@ -47,6 +48,22 @@ async function loadConfig(companyId: string): Promise<CompanyConfigWithCreds | n
     FROM companies WHERE id = ${companyId}
   `
 
+    // Resolve company billing address dynamically from ERPNext
+    const gstin = '33AABCZ2616B1ZV'
+    let companyAddress: string | undefined
+    if (company?.erpnext_url && company?.erpnext_api_key && company?.erpnext_api_secret) {
+        try {
+            const erpClient = new ERPNextClient({
+                baseUrl: company.erpnext_url,
+                apiKey: company.erpnext_api_key,
+                apiSecret: company.erpnext_api_secret,
+            })
+            companyAddress = await erpClient.ensureCompanyAddress(company.erpnext_company, gstin)
+        } catch (err) {
+            logger.warn({ err }, 'Could not resolve company address — falling back to naming convention')
+        }
+    }
+
     return {
         companyId,
         erpnextCompany: company?.erpnext_company ?? '',
@@ -56,8 +73,11 @@ async function loadConfig(companyId: string): Promise<CompanyConfigWithCreds | n
         erpnextApiSecret: company?.erpnext_api_secret ?? '',
         currency: 'INR',
         costCenter: `Main - ${company?.erpnext_abbr ?? 'CPT'}`,
-        companyGstin: '33AABCZ2616B1ZV',
+        companyGstin: gstin,
+        companyAddress,
         defaultState: 'Tamil Nadu',
+        // defaultWarehouse: set via config when ERPNext accounts are linked to warehouse
+        // e.g. `Stores - CPT` — enables update_stock on Sales/Purchase Invoices
         accountMappings: row.account_mappings ?? {},
         gstLedgerMappings: {
             output_cgst: row.gst_ledger_mappings?.output_cgst ?? '',

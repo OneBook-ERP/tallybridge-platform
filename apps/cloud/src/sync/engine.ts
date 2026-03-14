@@ -102,30 +102,113 @@ export async function processTallyVoucher(voucher: TallyVoucher, config: ConfigW
         const doc = result.doc as unknown as Record<string, unknown>
         const doctype = (result.doc as ERPNextDocument).doctype
 
-        // Ensure party exists (pass GSTIN for India Compliance)
+        // Helper: look up Tally group from ledger_masters for a party name
+        const getPartyGroup = async (partyName: string): Promise<string | undefined> => {
+            const [row] = await sql<{ tally_group: string | null }[]>`
+                SELECT tally_group FROM ledger_masters
+                WHERE company_id = ${config.companyId} AND tally_name = ${partyName}
+                LIMIT 1
+            `
+            return row?.tally_group || undefined
+        }
+
+        // Helper: look up address/contact data from ledger_masters raw_data
+        const getPartyMasterData = async (partyName: string) => {
+            const [row] = await sql<{ raw_data: Record<string, unknown> | null }[]>`
+                SELECT raw_data FROM ledger_masters
+                WHERE company_id = ${config.companyId} AND tally_name = ${partyName}
+                LIMIT 1
+            `
+            if (!row?.raw_data) return null
+            const r = row.raw_data
+            return {
+                address: (r.Address ?? r.address ?? []) as string[],
+                pinCode: (r.PinCode ?? r.pinCode ?? '') as string,
+                state: (r.StateName ?? r.stateName ?? r.LedStateName ?? '') as string,
+                country: (r.CountryName ?? r.countryName ?? '') as string,
+                email: (r.Email ?? r.email ?? '') as string,
+                mobile: (r.Mobile ?? r.mobile ?? r.LedgerMobile ?? '') as string,
+                phone: (r.Phone ?? r.phone ?? r.LedgerPhone ?? '') as string,
+                gstin: (r.PartyGSTIN ?? r.partyGSTIN ?? '') as string,
+            }
+        }
+
+        // Helper: create address + contact for a party if master data exists
+        const ensurePartyAddressContact = async (partyType: 'Customer' | 'Supplier', partyName: string) => {
+            const master = await getPartyMasterData(partyName)
+            if (!master) return
+            if (master.address.length > 0 || master.pinCode) {
+                await erpClient.ensurePartyAddress(partyType, partyName, {
+                    lines: master.address,
+                    pinCode: master.pinCode,
+                    state: master.state,
+                    country: master.country || 'India',
+                    gstin: master.gstin,
+                })
+            }
+            if (master.email || master.mobile || master.phone) {
+                await erpClient.ensurePartyContact(partyType, partyName, {
+                    email: master.email,
+                    mobile: master.mobile,
+                    phone: master.phone,
+                })
+            }
+        }
+
+        // Helper: look up item group from stock_item_masters
+        const getItemGroup = async (itemName: string): Promise<string | undefined> => {
+            const [row] = await sql<{ tally_parent: string | null }[]>`
+                SELECT tally_parent FROM stock_item_masters
+                WHERE company_id = ${config.companyId} AND tally_name = ${itemName}
+                LIMIT 1
+            `
+            return row?.tally_parent || undefined
+        }
+
+        // Ensure party exists (pass GSTIN + group for India Compliance) + address/contact
         if (doctype === 'Sales Invoice' && doc.customer) {
-            await erpClient.ensureCustomer(doc.customer as string, (doc.customer_gstin as string) || undefined)
+            const partyName = doc.customer as string
+            const group = await getPartyGroup(partyName)
+            await erpClient.ensureCustomer(partyName, (doc.customer_gstin as string) || undefined, group)
+            await ensurePartyAddressContact('Customer', partyName)
         }
         if (doctype === 'Purchase Invoice' && doc.supplier) {
-            await erpClient.ensureSupplier(doc.supplier as string, (doc.supplier_gstin as string) || undefined)
+            const partyName = doc.supplier as string
+            const group = await getPartyGroup(partyName)
+            await erpClient.ensureSupplier(partyName, (doc.supplier_gstin as string) || undefined, group)
+            await ensurePartyAddressContact('Supplier', partyName)
         }
         if (doctype === 'Payment Entry' && doc.party) {
-            if (doc.party_type === 'Customer') await erpClient.ensureCustomer(doc.party as string)
-            else if (doc.party_type === 'Supplier') await erpClient.ensureSupplier(doc.party as string)
+            const partyName = doc.party as string
+            const group = await getPartyGroup(partyName)
+            if (doc.party_type === 'Customer') {
+                await erpClient.ensureCustomer(partyName, undefined, group)
+                await ensurePartyAddressContact('Customer', partyName)
+            } else if (doc.party_type === 'Supplier') {
+                await erpClient.ensureSupplier(partyName, undefined, group)
+                await ensurePartyAddressContact('Supplier', partyName)
+            }
         }
         // Journal Entry — auto-create parties referenced in accounts
         if (doctype === 'Journal Entry' && Array.isArray(doc.accounts)) {
             for (const acct of doc.accounts as Array<{ party?: string; party_type?: string }>) {
                 if (!acct.party) continue
-                if (acct.party_type === 'Customer') await erpClient.ensureCustomer(acct.party)
-                else if (acct.party_type === 'Supplier') await erpClient.ensureSupplier(acct.party)
+                const group = await getPartyGroup(acct.party)
+                if (acct.party_type === 'Customer') {
+                    await erpClient.ensureCustomer(acct.party, undefined, group)
+                    await ensurePartyAddressContact('Customer', acct.party)
+                } else if (acct.party_type === 'Supplier') {
+                    await erpClient.ensureSupplier(acct.party, undefined, group)
+                    await ensurePartyAddressContact('Supplier', acct.party)
+                }
             }
         }
 
-        // Ensure items exist
+        // Ensure items exist (with HSN + group from stock_item_masters)
         const items = (doc.items as Array<{ item_code: string; uom?: string; gst_hsn_code?: string }>) ?? []
         for (const item of items) {
-            await erpClient.ensureItem(item.item_code, item.uom, item.gst_hsn_code)
+            const itemGroup = await getItemGroup(item.item_code)
+            await erpClient.ensureItem(item.item_code, item.uom, item.gst_hsn_code, itemGroup)
         }
     } catch (err: unknown) {
         const errMsg = err instanceof Error ? err.message : String(err)

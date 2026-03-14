@@ -69,6 +69,15 @@ describe('transformSales', () => {
         expect(result.doc.is_return).toBe(1)
     })
 
+    it('negates quantity for credit notes / returns', () => {
+        const voucher = makeSalesVoucher({ voucherTypeName: 'Credit Note' })
+        const result = transformSales(voucher, config)
+
+        expect(result.success).toBe(true)
+        if (!result.success) return
+        expect(result.doc.items[0].qty).toBe(-10) // qty should be negative for returns
+    })
+
     it('handles inter-state sales (IGST)', () => {
         const voucher = makeInterStateVoucher()
         const result = transformSales(voucher, config)
@@ -180,5 +189,33 @@ describe('transformSales', () => {
         expect(result.success).toBe(true)
         if (!result.success) return
         expect(result.doc.customer).toBe('Customer-Corp -Ltd-')
+    })
+
+    it('uses companyAddress from config when set', () => {
+        const configWithAddr = makeConfig({ companyAddress: 'Covai Polymer Traders-Billing' })
+        const voucher = makeSalesVoucher()
+        const result = transformSales(voucher, configWithAddr)
+
+        expect(result.success).toBe(true)
+        if (!result.success) return
+        expect(result.doc.company_address).toBe('Covai Polymer Traders-Billing')
+    })
+
+    it('falls back to naming convention when companyAddress not set', () => {
+        const voucher = makeSalesVoucher()
+        const result = transformSales(voucher, config)
+
+        expect(result.success).toBe(true)
+        if (!result.success) return
+        expect(result.doc.company_address).toBe('Test Company-Billing')
+    })
+
+    it('sets custom_tally_voucher_number', () => {
+        const voucher = makeSalesVoucher({ voucherNumber: 'SI-555' })
+        const result = transformSales(voucher, config)
+
+        expect(result.success).toBe(true)
+        if (!result.success) return
+        expect(result.doc.custom_tally_voucher_number).toBe('SI-555')
     })
 })

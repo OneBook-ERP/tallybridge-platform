@@ -9,7 +9,7 @@
  */
 import type { TallyVoucher, CompanyConfig, ERPNextPaymentEntry, PaymentReference, TransformResult } from '../../types'
 import { resolveAccount, isTransformError } from '../account-resolver'
-import { tallyDateToErp, absAmount, roundInr, sanitiseName } from '../utils'
+import { tallyDateToErp, absAmount, roundInr, sanitiseName, isRoundOff } from '../utils'
 
 export function transformPayment(voucher: TallyVoucher, config: CompanyConfig): TransformResult<ERPNextPaymentEntry> {
     const isReceipt = voucher.voucherTypeName.toLowerCase().includes('receipt')
@@ -32,10 +32,11 @@ export function transformPayment(voucher: TallyVoucher, config: CompanyConfig): 
         }
     }
 
-    // Find bank/cash ledger entry (non-party)
+    // Find bank/cash ledger entry (non-party, non-round-off)
     let bankEntry = voucher.ledgerEntries.find(
-        (le) => le !== partyEntry && !le.isPartyLedger && le.ledgerName !== voucher.partyLedgerName,
+        (le) => le !== partyEntry && !le.isPartyLedger && le.ledgerName !== voucher.partyLedgerName && !isRoundOff(le.amount),
     )
+    if (!bankEntry) bankEntry = voucher.ledgerEntries.find((le) => le !== partyEntry && !isRoundOff(le.amount))
     if (!bankEntry) bankEntry = voucher.ledgerEntries.find((le) => le !== partyEntry)
     const bankResolved = resolveAccount(bankEntry?.ledgerName ?? '', config, {
         isPartyLedger: bankEntry?.isPartyLedger,
@@ -44,7 +45,7 @@ export function transformPayment(voucher: TallyVoucher, config: CompanyConfig): 
     if (isTransformError(bankResolved)) {
         if (bankResolved.code === 'UNMAPPED_LEDGER') return { success: false, error: bankResolved }
     }
-    const bankAccount = !isTransformError(bankResolved)
+    const bankAccount = !isTransformError(bankResolved) && !bankResolved.isRoundOff && bankResolved.account !== '__IGNORE__'
         ? bankResolved.account
         : (config.accountMappings['Cash'] ?? 'Cash')
 
@@ -91,6 +92,7 @@ export function transformPayment(voucher: TallyVoucher, config: CompanyConfig): 
         cost_center: config.costCenter || undefined,
         company_gstin: config.companyGstin || undefined,
         custom_tally_guid: voucher.guid,
+        custom_tally_voucher_number: voucher.voucherNumber,
         custom_sync_source: 'TALLYBRIDGE',
     }
 

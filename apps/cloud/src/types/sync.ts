@@ -38,8 +38,10 @@ export interface CompanyConfig {
     erpnextCompany: string // ERPNext company name (for items)
     erpnextAbbr?: string // ERPNext company abbreviation (e.g. "ZP") — used for account suffixes
     companyGstin?: string // Company GSTIN — used to derive state for inter-state GST
+    companyAddress?: string // ERPNext Address name (e.g. "Covai Polymer Traders-Billing") — resolved dynamically
     defaultState?: string // Fallback state when GSTIN is not set (e.g. "Tamil Nadu")
     currency: string // "INR"
+    defaultWarehouse?: string // e.g. "Stores - CPT" — used for update_stock on invoices
     costCenter?: string // e.g. "Main - AC"
     accountMappings: AccountMapping
     gstLedgerMappings: GSTLedgerMapping

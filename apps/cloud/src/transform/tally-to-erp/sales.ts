@@ -11,10 +11,16 @@ const FALLBACK_STATE = 'Tamil Nadu' // only used if neither GSTIN nor config.def
 export function transformSales(voucher: TallyVoucher, config: CompanyConfig): TransformResult<ERPNextSalesInvoice> {
     const warnings: string[] = []
 
-    // Determine if credit note (Sales Return)
-    const isReturn =
-        voucher.voucherTypeName.toLowerCase().includes('return') ||
-        voucher.voucherTypeName.toLowerCase().includes('credit')
+    // Determine if credit note (Sales Return) — check voucher type name first,
+    // then fall back to detecting negative inventory quantities (Tally sometimes
+    // records returns as regular "Sales" vouchers with negative qty/amount).
+    const vtLower = voucher.voucherTypeName.toLowerCase()
+    const isReturnByName = vtLower.includes('return') || vtLower.includes('credit')
+    const isReturnByQty =
+        !isReturnByName &&
+        voucher.inventoryEntries.length > 0 &&
+        voucher.inventoryEntries.every((e) => e.billedQty < 0 || e.actualQty < 0)
+    const isReturn = isReturnByName || isReturnByQty
 
     // Derive company state from GSTIN if available
     const companyState =
@@ -56,15 +62,16 @@ export function transformSales(voucher: TallyVoucher, config: CompanyConfig): Tr
         const actualAcct =
             !isTransformError(incomeAcct) && !incomeAcct.isPartyFallback ? incomeAcct.account : defaultIncome
 
+        const qty = absAmount(inv.billedQty || inv.actualQty) || 1
         items.push({
             item_code: sanitiseName(inv.stockItemName),
             item_name: inv.stockItemName,
-            qty: absAmount(inv.billedQty || inv.actualQty),
+            qty: isReturn ? -qty : qty,
             uom: inv.billedQtyUOM || inv.actualQtyUOM || 'Nos',
             rate: absAmount(inv.rate),
             amount: absAmount(inv.amount),
             income_account: actualAcct,
-            gst_hsn_code: inv.hsnCode || '',
+            gst_hsn_code: inv.hsnCode || '999111',
         })
 
         if (!inv.hsnCode) {
@@ -103,12 +110,25 @@ export function transformSales(voucher: TallyVoucher, config: CompanyConfig): Tr
     const taxTotal = roundInr(gst.taxLines.reduce((s, t) => s + t.tax_amount, 0))
     const grandTotal = roundInr(total + taxTotal)
 
+    // Due date: use bill allocation due date from Tally, fallback to posting date
+    const postingDate = tallyDateToErp(voucher.date)
+    const tallyDueDate = voucher.ledgerEntries
+        .flatMap((le) => le.billAllocations)
+        .find((ba) => ba.dueDate)?.dueDate
+    const dueDate = tallyDueDate ? tallyDateToErp(tallyDueDate) : postingDate
+
     const doc: ERPNextSalesInvoice = {
         doctype: 'Sales Invoice',
         customer: sanitiseName(voucher.partyLedgerName),
         company: config.erpnextCompany,
-        posting_date: tallyDateToErp(voucher.date),
+        posting_date: postingDate,
+        due_date: dueDate,
+        set_posting_time: 1,
         bill_no: voucher.voucherNumber,
+        update_stock: voucher.inventoryEntries.length > 0 && config.defaultWarehouse ? 1 : 0,
+        set_warehouse: voucher.inventoryEntries.length > 0 && config.defaultWarehouse
+            ? config.defaultWarehouse
+            : undefined,
         is_return: isReturn ? 1 : 0,
         currency: config.currency,
         conversion_rate: 1,
@@ -117,7 +137,7 @@ export function transformSales(voucher: TallyVoucher, config: CompanyConfig): Tr
         gst_category: gst.gstCategory,
         customer_gstin: voucher.partyGSTIN || undefined,
         company_gstin: config.companyGstin || undefined,
-        company_address: config.companyGstin ? `${config.erpnextCompany}-Billing` : undefined,
+        company_address: config.companyAddress || (config.companyGstin ? `${config.erpnextCompany}-Billing` : undefined),
         is_rcm_applicable: gst.isRCM ? 1 : 0,
         remarks: voucher.narration || undefined,
         items,

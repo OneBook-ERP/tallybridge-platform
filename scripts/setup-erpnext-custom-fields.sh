@@ -2,7 +2,8 @@
 # Setup ERPNext custom fields for TallyBridge sync.
 # Usage: ./setup-erpnext-custom-fields.sh <erpnext_url> <api_key> <api_secret>
 #
-# Creates custom_tally_guid and custom_sync_source on 7 doctypes:
+# Creates custom_tally_guid, custom_sync_source on 7 doctypes,
+# plus custom_tally_voucher_number on 4 transaction doctypes:
 #   Sales Invoice, Purchase Invoice, Journal Entry, Payment Entry,
 #   Item, Customer, Supplier
 
@@ -66,5 +67,32 @@ for DT in "${DOCTYPES[@]}"; do
     fi
 done
 
+# custom_tally_voucher_number on transaction doctypes only
+TXNDOCTYPES=("Sales Invoice" "Purchase Invoice" "Journal Entry" "Payment Entry")
 echo ""
-echo "=== Done! 14 custom fields verified on ${ERPNEXT_URL} ==="
+echo "=== Setting up custom_tally_voucher_number ==="
+for DT in "${TXNDOCTYPES[@]}"; do
+    echo -n "  ${DT} → custom_tally_voucher_number ... "
+    RESP=$(curl -s -X POST "${ERPNEXT_URL}/api/resource/Custom%20Field" \
+        -H "$AUTH" \
+        -H "Content-Type: application/json" \
+        -d "{
+            \"dt\": \"${DT}\",
+            \"fieldname\": \"custom_tally_voucher_number\",
+            \"label\": \"Tally Voucher Number\",
+            \"fieldtype\": \"Data\",
+            \"insert_after\": \"custom_sync_source\",
+            \"read_only\": 1,
+            \"no_copy\": 1
+        }" 2>&1)
+    if echo "$RESP" | grep -q '"name"'; then
+        echo "OK"
+    elif echo "$RESP" | grep -q 'DuplicateEntryError\|already exists'; then
+        echo "SKIP (exists)"
+    else
+        echo "ERROR: $(echo "$RESP" | head -c 100)"
+    fi
+done
+
+echo ""
+echo "=== Done! 18 custom fields verified on ${ERPNEXT_URL} ==="

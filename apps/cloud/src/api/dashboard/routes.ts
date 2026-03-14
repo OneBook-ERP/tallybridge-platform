@@ -5,6 +5,7 @@
 import type { FastifyPluginAsync } from 'fastify'
 import { sql } from '../../db/db'
 import { erpClient } from '../../erpnext/client'
+import { generateOpeningBalance } from '../../sync/opening-balance'
 import { logger } from '../../lib/logger'
 
 export const dashboardRoutes: FastifyPluginAsync = async (app) => {
@@ -150,6 +151,50 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
         }
 
         return { ok: true, resolved: resolvedCount, errorCode: code }
+    })
+
+    // POST /dashboard/opening-balance — generate opening balance Journal Entry from Tally ledger masters
+    app.post<{ Body: { companyId: string; postingDate: string } }>('/dashboard/opening-balance', async (req) => {
+        const { companyId, postingDate } = req.body ?? {}
+        if (!companyId || !postingDate) {
+            return { ok: false, error: 'companyId and postingDate are required' }
+        }
+
+        // Load company + config
+        const [company] = await sql<{
+            erpnext_company: string
+            erpnext_abbr: string | null
+            erpnext_url: string
+            erpnext_api_key: string
+            erpnext_api_secret: string
+        }[]>`
+            SELECT erpnext_company, erpnext_abbr, erpnext_url, erpnext_api_key, erpnext_api_secret
+            FROM companies WHERE id = ${companyId}
+        `
+        if (!company) return { ok: false, error: 'Company not found' }
+
+        const [profile] = await sql<{ account_mappings: Record<string, string> }[]>`
+            SELECT account_mappings FROM config_profiles WHERE company_id = ${companyId}
+        `
+
+        try {
+            const erpName = await generateOpeningBalance({
+                companyId,
+                erpnextCompany: company.erpnext_company,
+                erpnextAbbr: company.erpnext_abbr ?? undefined,
+                postingDate,
+                accountMappings: profile?.account_mappings ?? {},
+                costCenter: `Main - ${company.erpnext_abbr ?? 'CPT'}`,
+                companyGstin: '33AABCZ2616B1ZV',
+                erpnextUrl: company.erpnext_url,
+                erpnextApiKey: company.erpnext_api_key,
+                erpnextApiSecret: company.erpnext_api_secret,
+            })
+            return { ok: true, erpName }
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err)
+            return { ok: false, error: msg }
+        }
     })
 
     // GET /dashboard/data-comparison?companyId=... — Tally vs ERPNext document counts

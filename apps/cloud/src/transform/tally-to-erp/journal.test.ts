@@ -73,7 +73,25 @@ describe('transformJournal', () => {
         expect(result.warnings[0]).toContain('Round-off')
     })
 
-    it('attaches party info for party ledger entries', () => {
+    it('attaches party info on Receivable/Payable accounts only', () => {
+        const voucher = makeJournalVoucher({
+            partyLedgerName: 'Customer ABC',
+            ledgerEntries: [
+                makeLedgerEntry({ ledgerName: 'Customer ABC', isDeemedPositive: true, amount: 5000, isPartyLedger: true }),
+                makeLedgerEntry({ ledgerName: 'Bank Account', isDeemedPositive: false, amount: -5000 }),
+            ],
+        })
+        const result = transformJournal(voucher, config)
+
+        expect(result.success).toBe(true)
+        if (!result.success) return
+        const partyAccount = result.doc.accounts.find((a) => a.party)
+        expect(partyAccount).toBeDefined()
+        expect(partyAccount!.party).toBe('Customer ABC')
+        expect(partyAccount!.account).toContain('Debtors')
+    })
+
+    it('does not set party on non-Receivable/Payable accounts', () => {
         const voucher = makeJournalVoucher({
             partyLedgerName: 'Customer ABC',
             ledgerEntries: [
@@ -85,9 +103,9 @@ describe('transformJournal', () => {
 
         expect(result.success).toBe(true)
         if (!result.success) return
+        // No account should have party set — Sales and Bank are not Receivable/Payable
         const partyAccount = result.doc.accounts.find((a) => a.party)
-        expect(partyAccount).toBeDefined()
-        expect(partyAccount!.party).toBe('Customer ABC')
+        expect(partyAccount).toBeUndefined()
     })
 
     it('fails when all entries are filtered out', () => {
@@ -122,5 +140,14 @@ describe('transformJournal', () => {
         expect(result.success).toBe(true)
         if (!result.success) return
         expect(result.doc.user_remark).toBe('Year end adjustment')
+    })
+
+    it('sets custom_tally_voucher_number from voucher', () => {
+        const voucher = makeJournalVoucher({ voucherNumber: 'JV-042' })
+        const result = transformJournal(voucher, config)
+
+        expect(result.success).toBe(true)
+        if (!result.success) return
+        expect(result.doc.custom_tally_voucher_number).toBe('JV-042')
     })
 })

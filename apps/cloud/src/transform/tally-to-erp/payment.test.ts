@@ -144,4 +144,13 @@ describe('transformPayment', () => {
         if (result.success) return
         expect(result.error.code).toBe('TRANSFORM_FAILED')
     })
+
+    it('sets custom_tally_voucher_number from voucher', () => {
+        const voucher = makePaymentVoucher({ voucherNumber: 'PMT-099' })
+        const result = transformPayment(voucher, config)
+
+        expect(result.success).toBe(true)
+        if (!result.success) return
+        expect(result.doc.custom_tally_voucher_number).toBe('PMT-099')
+    })
 })

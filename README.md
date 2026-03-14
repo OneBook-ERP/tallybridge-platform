@@ -2,6 +2,8 @@
 
 Cloud middleware that syncs data between **Tally ERP** and **ERPNext** in real-time. Receives voucher data from the [TallyBridge Connector](https://github.com/OneBook-ERP/tallybridge-connector) desktop app, transforms it, and writes to ERPNext via REST API.
 
+[![CI](https://github.com/OneBook-ERP/tallybridge-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/OneBook-ERP/tallybridge-platform/actions/workflows/ci.yml)
+
 ## Architecture
 
 ```
@@ -16,12 +18,14 @@ ERPNext (Cloud SaaS)
 
 ## Tech Stack
 
-- **Runtime:** Node.js + TypeScript
+- **Runtime:** Node.js 20 + TypeScript
 - **API Server:** Fastify
 - **Job Queue:** BullMQ (Redis-backed)
 - **Database:** PostgreSQL 16
 - **Real-time:** WebSocket (Fastify plugin)
 - **Monorepo:** Turborepo with two apps (`cloud`, `cloud-frontend`)
+- **Testing:** Vitest (166 tests)
+- **Linting:** ESLint + Prettier
 
 ## Project Structure
 
@@ -29,28 +33,34 @@ ERPNext (Cloud SaaS)
 apps/
 ├── cloud/                    # Backend API + sync engine
 │   └── src/
-│       ├── api/              # REST endpoints (connector, dashboard)
+│       ├── api/              # REST endpoints
+│       │   ├── connector/    # Connector registration, sync-data, heartbeat
+│       │   └── dashboard/    # Dashboard stats, exceptions, audit log
 │       ├── auth/             # Machine token auth
-│       ├── db/               # PostgreSQL connection + migrations
-│       ├── erpnext/          # ERPNext REST API client
-│       ├── lib/              # Env, logger, errors
+│       ├── db/               # PostgreSQL connection + 8 migrations
+│       ├── erpnext/          # ERPNext REST API client (retry, rate limiting)
+│       ├── lib/              # Env, logger, crypto, errors
 │       ├── queue/            # BullMQ producer/consumer
 │       ├── realtime/         # WebSocket broadcaster
 │       ├── sync/             # Sync engine, loop guard, conflict detection
+│       ├── test/             # Test setup + fixtures
 │       └── transform/        # Tally → ERPNext transformers
-│           ├── account-resolver.ts    # Ledger → Account mapping
-│           ├── gst-resolver.ts        # GST tax computation
-│           └── tally-to-erp/          # Per-doctype transformers
-│               ├── sales.ts           # Sales Invoice
-│               ├── purchase.ts        # Purchase Invoice
-│               ├── payment.ts         # Payment Entry
-│               └── journal.ts         # Journal Entry
-├── cloud-frontend/           # React dashboard (Vite + Tailwind)
+│           ├── normalize.ts          # PascalCase → camelCase normalizer
+│           ├── account-resolver.ts   # 6-step ledger → account resolution
+│           ├── gst-resolver.ts       # GST tax computation (CGST/SGST/IGST/RCM)
+│           └── tally-to-erp/         # Per-doctype transformers
+│               ├── sales.ts          # Sales Invoice + Credit Notes
+│               ├── purchase.ts       # Purchase Invoice + Debit Notes
+│               ├── payment.ts        # Payment Entry (Pay/Receive)
+│               └── journal.ts        # Journal Entry + Contra
+├── cloud-frontend/           # React dashboard (Vite + Tailwind CSS 4)
 │   └── src/
-│       ├── app/dashboard/    # Dashboard page (stats, sync records, exceptions, data comparison)
-│       └── lib/api.ts        # API client
-└── scripts/
-    └── cleanup-duplicates.ts # ERPNext duplicate document cleanup
+│       ├── app/dashboard/    # 4-tab dashboard (Overview, Exceptions, Activity, Settings)
+│       └── lib/api.ts        # API client + WebSocket hook
+├── scripts/
+│   ├── setup-erpnext-custom-fields.sh  # ERPNext custom field setup
+│   └── cleanup-duplicates.ts           # Duplicate document cleanup
+└── docker-compose.yml        # PostgreSQL + Redis
 ```
 
 ## Setup
@@ -79,8 +89,27 @@ npm run migrate -w apps/cloud
 # Start dev server (with hot reload)
 npm run dev -w apps/cloud
 
-# Start frontend
+# Start frontend (port 5173, proxies /api to localhost:3000)
 npm run dev -w apps/cloud-frontend
+```
+
+### Running Tests
+
+```bash
+# Run all 166 tests
+npm test -w apps/cloud
+
+# With coverage
+npm test -w apps/cloud -- --coverage
+```
+
+### Linting
+
+```bash
+npm run lint           # ESLint check
+npm run format:check   # Prettier check
+npm run lint:fix       # Auto-fix lint issues
+npm run format         # Auto-format
 ```
 
 ### Environment Variables
@@ -99,102 +128,72 @@ npm run dev -w apps/cloud-frontend
 1. **Connector** sends Tally vouchers to `POST /connector/sync-data`
 2. **BullMQ** queues the batch as a `sync-jobs` job
 3. **Sync Engine** processes each voucher:
-   - Loop guard check (skip if we wrote it)
-   - Conflict detection (hash comparison)
-   - Transform (Tally → ERPNext format)
-   - Auto-create masters (Customer, Supplier, Item)
+   - Loop guard check (skip if we wrote it via `custom_sync_source`)
+   - Conflict detection (hash comparison — skip unchanged)
+   - Transform (Tally → ERPNext format with GST, dates, HSN)
+   - Auto-create masters (Customer, Supplier, Item with GSTIN)
    - Write to ERPNext (create or cancel-amend)
-   - Update sync record + audit log
+   - Record sync result + audit log entry
 
-### Account Resolution Order
+### Deduplication (3-layer)
+1. **Hash-based skip** — sync_records table stores content hash per GUID
+2. **ERPNext duplicate guard** — `findByTallyGUID` checks before creating
+3. **Redis loop guard** — prevents re-processing own writes
 
-1. GST pattern match (CGST/SGST/IGST)
-2. Round-off detection (auto-skip)
-3. Exact match in `accountMappings`
-4. Party fallback (Debtors/Creditors) via `isPartyLedger` flag or `partyLedgerName`
-5. Aggressive party detection (name without expense keywords → assumed party)
+### Account Resolution (6-step)
+1. GST pattern match (CGST/SGST/IGST → tax accounts)
+2. Round-off detection (auto-skip small amounts)
+3. Exact match in `accountMappings` config
+4. Party fallback (Debtors/Creditors) via `isPartyLedger` flag
+5. Aggressive party detection (name without expense keywords → party)
 6. Unmapped → TIER-3 exception
+
+### Exception Handling (3-tier)
+- **Tier 1** — Auto-corrected (rounding, missing HSN → fallback SAC `999111`)
+- **Tier 2** — Flagged (ERPNext write failures, config issues)
+- **Tier 3** — Blocked (unmapped ledgers, transform failures)
 
 ## API Endpoints
 
 ### Connector APIs (auth: Bearer machine token)
-- `POST /connector/register` — Register connector + get machine token
-- `POST /connector/heartbeat` — Connector health ping
-- `POST /connector/sync-data` — Upload Tally voucher batch
-- `GET /connector/jobs/pending` — Long-poll for reverse sync jobs
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/connector/register` | Register connector, get machine token |
+| POST | `/connector/heartbeat` | Connector keep-alive ping |
+| POST | `/connector/sync-data` | Upload Tally voucher/master batch |
+| GET | `/connector/jobs/pending` | Long-poll for reverse sync jobs |
+| POST | `/connector/jobs/result` | Report reverse sync job result |
 
 ### Dashboard APIs
-- `GET /dashboard/companies` — List registered companies
-- `GET /dashboard/stats?companyId=` — Sync overview metrics
-- `GET /dashboard/sync-records?companyId=` — Recent sync activity
-- `GET /dashboard/exceptions?companyId=` — Open exceptions
-- `GET /dashboard/audit-log?companyId=` — Audit trail
-- `GET /dashboard/data-comparison?companyId=` — Tally vs ERPNext counts
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/dashboard/companies` | List registered companies |
+| GET | `/dashboard/stats` | Sync overview (synced, errored, pending, exceptions) |
+| GET | `/dashboard/sync-records` | Recent sync activity with pagination |
+| GET | `/dashboard/exceptions` | Open exceptions with error details |
+| GET | `/dashboard/audit-log` | Full audit trail |
+| GET | `/dashboard/data-comparison` | Tally vs ERPNext document counts |
 
----
+### Webhook
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/webhook/erpnext` | ERPNext webhook receiver (reverse sync) |
 
-## Task Tracker
+## Test Coverage
 
-### Completed
-- [x] Fastify server with health endpoint
-- [x] PostgreSQL schema + migrations (7 tables)
-- [x] BullMQ job queue (sync-jobs + tally-write)
-- [x] Machine token auth for connectors
-- [x] Connector registration endpoint
-- [x] Sync data ingestion endpoint (with 50MB body limit)
-- [x] Full sync engine (transform → write → record)
-- [x] Sales Invoice transformer (with GST, credit notes)
-- [x] Purchase Invoice transformer (with debit notes)
-- [x] Payment Entry transformer (with bill allocations)
-- [x] Journal Entry transformer (with contra support)
-- [x] Account resolver with 6-step resolution
-- [x] GST resolver (inter/intra state, RCM, place of supply)
-- [x] ERPNext REST client (CRUD, cancel-amend, count)
-- [x] Auto-create Customer/Supplier/Item in ERPNext
-- [x] Conflict detection (hash-based)
-- [x] Loop guard (skip own writes)
-- [x] Duplicate guard (check ERPNext before creating)
-- [x] WebSocket broadcaster for real-time updates
-- [x] Dashboard API (stats, sync records, exceptions, audit, data comparison)
-- [x] Dashboard frontend (React + Tailwind)
-- [x] Exception recording for ERPNext write failures
-- [x] Company-agnostic transforms (config-driven)
-- [x] Aggressive party detection for unmapped ledgers
-- [x] `__IGNORE__` account handling (skip entries)
-
-### In Progress
-- [ ] Reverse sync (ERPNext → Tally via webhooks)
-- [ ] Master data sync (ledgers, stock items from connector)
-
-### To Do — High Priority
-- [ ] Wire `/connector/heartbeat` (connector never calls it)
-- [ ] Wire `/connector/jobs/pending` (long-poll for reverse sync)
-- [ ] Opening balance sync (Tally → ERPNext)
-- [ ] Address/contact sync for customers/suppliers
-- [ ] HSN code passthrough from Tally stock items
-- [ ] Retry mechanism for failed ERPNext writes
-- [ ] Rate limiting and backpressure on sync ingestion
-
-### To Do — Medium Priority
-- [ ] Multi-company support (tested with single company so far)
-- [ ] Dashboard: settings page for account mappings
-- [ ] Dashboard: conflict resolution UI
-- [ ] Dashboard: manual exception resolution
-- [ ] ERPNext webhook receiver (for ERP → Tally sync)
-- [ ] Batch processing optimization (parallel ERPNext writes)
-- [ ] Company GSTIN in config_profiles (currently optional)
-
-### To Do — Low Priority
-- [ ] Authentication for dashboard (currently open)
-- [ ] Pagination for dashboard API responses
-- [ ] Export sync report (CSV/PDF)
-- [ ] Email/Slack notifications for sync failures
-- [ ] Metrics and monitoring (Prometheus)
-- [ ] Unit tests for all transformers
-- [ ] Integration tests with live ERPNext
-- [ ] CI/CD pipeline
-- [ ] Docker deployment config
-- [ ] Documentation for onboarding new companies
+| Test File | Tests | Description |
+|-----------|-------|-------------|
+| `utils.test.ts` | 29 | Date parsing, amount rounding, sanitization |
+| `account-resolver.test.ts` | 18 | 6-step resolution, party detection, GST |
+| `gst-resolver.test.ts` | 11 | Inter/intra state, RCM, categories |
+| `normalize.test.ts` | 8 | PascalCase → camelCase conversion |
+| `crypto.test.ts` | 15 | Hashing, token generation |
+| `sales.test.ts` | 16 | Sales invoices, credit notes, returns |
+| `purchase.test.ts` | 8 | Purchase invoices, debit notes |
+| `payment.test.ts` | 9 | Payments, receipts, bill allocations |
+| `journal.test.ts` | 11 | Journals, contra, rounding balance |
+| `index.test.ts` | 10 | Voucher type routing |
+| `client.test.ts` | 31 | ERPNext API client, retry, master creation |
 
 ---
 
