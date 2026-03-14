@@ -77,7 +77,12 @@ describe('transformJournal', () => {
         const voucher = makeJournalVoucher({
             partyLedgerName: 'Customer ABC',
             ledgerEntries: [
-                makeLedgerEntry({ ledgerName: 'Customer ABC', isDeemedPositive: true, amount: 5000, isPartyLedger: true }),
+                makeLedgerEntry({
+                    ledgerName: 'Customer ABC',
+                    isDeemedPositive: true,
+                    amount: 5000,
+                    isPartyLedger: true,
+                }),
                 makeLedgerEntry({ ledgerName: 'Bank Account', isDeemedPositive: false, amount: -5000 }),
             ],
         })

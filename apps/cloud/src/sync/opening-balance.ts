@@ -105,7 +105,14 @@ export async function generateOpeningBalance(opts: OpeningBalanceOptions): Promi
     // Balance the entry with Temporary Opening account if dr != cr
     const diff = Math.round((totalDebit - totalCredit) * 100) / 100
     if (Math.abs(diff) > 0.01) {
-        const suffix = opts.erpnextAbbr ?? opts.erpnextCompany.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 3)
+        const suffix =
+            opts.erpnextAbbr ??
+            opts.erpnextCompany
+                .split(' ')
+                .map((w) => w[0])
+                .join('')
+                .toUpperCase()
+                .slice(0, 3)
         const tempAccount = `Temporary Opening - ${suffix}`
         accounts.push({
             account: tempAccount,
@@ -133,7 +140,10 @@ export async function generateOpeningBalance(opts: OpeningBalanceOptions): Promi
     }
 
     try {
-        const created = await erpClient.createDoc<{ name: string }>('Journal Entry', doc as unknown as Record<string, unknown>)
+        const created = await erpClient.createDoc<{ name: string }>(
+            'Journal Entry',
+            doc as unknown as Record<string, unknown>,
+        )
         logger.info(
             { companyId: opts.companyId, erpName: created.name, entries: accounts.length, warnings },
             'Opening balance Journal Entry created',

@@ -180,7 +180,9 @@ describe('ERPNextClient', () => {
 
         it('updates HSN when existing item has fallback SAC and Tally provides real HSN', async () => {
             // getDoc returns item with fallback HSN
-            mockFetch.mockResolvedValueOnce(jsonResponse({ name: 'Old Item', gst_hsn_code: '999111', item_group: 'All Item Groups' }))
+            mockFetch.mockResolvedValueOnce(
+                jsonResponse({ name: 'Old Item', gst_hsn_code: '999111', item_group: 'All Item Groups' }),
+            )
             // updateDoc
             mockFetch.mockResolvedValueOnce(jsonResponse({ name: 'Old Item' }))
 
@@ -192,7 +194,9 @@ describe('ERPNextClient', () => {
         })
 
         it('does not update HSN when existing item already has real HSN', async () => {
-            mockFetch.mockResolvedValueOnce(jsonResponse({ name: 'Item', gst_hsn_code: '39201090', item_group: 'Polymers' }))
+            mockFetch.mockResolvedValueOnce(
+                jsonResponse({ name: 'Item', gst_hsn_code: '39201090', item_group: 'Polymers' }),
+            )
 
             await client.ensureItem('Item', 'Nos', '84719000')
 
@@ -210,7 +214,9 @@ describe('ERPNextClient', () => {
         })
 
         it('updates item group when existing is default', async () => {
-            mockFetch.mockResolvedValueOnce(jsonResponse({ name: 'Item', gst_hsn_code: '84719000', item_group: 'All Item Groups' }))
+            mockFetch.mockResolvedValueOnce(
+                jsonResponse({ name: 'Item', gst_hsn_code: '84719000', item_group: 'All Item Groups' }),
+            )
             mockFetch.mockResolvedValueOnce(jsonResponse({ name: 'Item' }))
 
             await client.ensureItem('Item', 'Nos', undefined, 'Finished Goods')
@@ -233,7 +239,9 @@ describe('ERPNextClient', () => {
         })
 
         it('updates group when existing has default group', async () => {
-            mockFetch.mockResolvedValueOnce(jsonResponse({ name: 'Cust', gstin: '33AAB', customer_group: 'All Customer Groups' }))
+            mockFetch.mockResolvedValueOnce(
+                jsonResponse({ name: 'Cust', gstin: '33AAB', customer_group: 'All Customer Groups' }),
+            )
             mockFetch.mockResolvedValueOnce(jsonResponse({ name: 'Cust' }))
 
             await client.ensureCustomer('Cust', undefined, 'Retail')

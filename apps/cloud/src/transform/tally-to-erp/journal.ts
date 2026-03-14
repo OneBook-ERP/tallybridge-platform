@@ -86,7 +86,8 @@ export function transformJournal(voucher: TallyVoucher, config: CompanyConfig): 
         if (diff > 0) {
             // Debit is larger — add credit adjustment to last credit entry
             const lastCredit = [...accounts].reverse().find((a) => a.credit_in_account_currency > 0)
-            if (lastCredit) lastCredit.credit_in_account_currency = roundInr(lastCredit.credit_in_account_currency + diff)
+            if (lastCredit)
+                lastCredit.credit_in_account_currency = roundInr(lastCredit.credit_in_account_currency + diff)
         } else {
             // Credit is larger — add debit adjustment to last debit entry
             const lastDebit = [...accounts].reverse().find((a) => a.debit_in_account_currency > 0)

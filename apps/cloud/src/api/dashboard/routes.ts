@@ -161,13 +161,15 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
         }
 
         // Load company + config
-        const [company] = await sql<{
-            erpnext_company: string
-            erpnext_abbr: string | null
-            erpnext_url: string
-            erpnext_api_key: string
-            erpnext_api_secret: string
-        }[]>`
+        const [company] = await sql<
+            {
+                erpnext_company: string
+                erpnext_abbr: string | null
+                erpnext_url: string
+                erpnext_api_key: string
+                erpnext_api_secret: string
+            }[]
+        >`
             SELECT erpnext_company, erpnext_abbr, erpnext_url, erpnext_api_key, erpnext_api_secret
             FROM companies WHERE id = ${companyId}
         `

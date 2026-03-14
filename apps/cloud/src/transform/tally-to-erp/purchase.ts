@@ -92,9 +92,7 @@ export function transformPurchase(
     // Dates: use Tally's actual dates, fallback to posting date
     const postingDate = tallyDateToErp(voucher.date)
     const billDate = voucher.referenceDate ? tallyDateToErp(voucher.referenceDate) : postingDate
-    const tallyDueDate = voucher.ledgerEntries
-        .flatMap((le) => le.billAllocations)
-        .find((ba) => ba.dueDate)?.dueDate
+    const tallyDueDate = voucher.ledgerEntries.flatMap((le) => le.billAllocations).find((ba) => ba.dueDate)?.dueDate
     const dueDate = tallyDueDate ? tallyDateToErp(tallyDueDate) : postingDate
 
     const doc: ERPNextPurchaseInvoice = {
@@ -107,9 +105,8 @@ export function transformPurchase(
         bill_no: voucher.referenceNumber || voucher.voucherNumber,
         set_posting_time: 1,
         update_stock: voucher.inventoryEntries.length > 0 && config.defaultWarehouse ? 1 : 0,
-        set_warehouse: voucher.inventoryEntries.length > 0 && config.defaultWarehouse
-            ? config.defaultWarehouse
-            : undefined,
+        set_warehouse:
+            voucher.inventoryEntries.length > 0 && config.defaultWarehouse ? config.defaultWarehouse : undefined,
         is_return: isReturn ? 1 : 0,
         currency: config.currency,
         conversion_rate: 1,
@@ -117,7 +114,8 @@ export function transformPurchase(
         gst_category: gst.gstCategory,
         supplier_gstin: voucher.partyGSTIN || undefined,
         company_gstin: config.companyGstin || undefined,
-        company_address: config.companyAddress || (config.companyGstin ? `${config.erpnextCompany}-Billing` : undefined),
+        company_address:
+            config.companyAddress || (config.companyGstin ? `${config.erpnextCompany}-Billing` : undefined),
         is_rcm_applicable: gst.isRCM ? 1 : 0,
         remarks: voucher.narration || undefined,
         items,

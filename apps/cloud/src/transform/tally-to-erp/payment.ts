@@ -34,7 +34,11 @@ export function transformPayment(voucher: TallyVoucher, config: CompanyConfig): 
 
     // Find bank/cash ledger entry (non-party, non-round-off)
     let bankEntry = voucher.ledgerEntries.find(
-        (le) => le !== partyEntry && !le.isPartyLedger && le.ledgerName !== voucher.partyLedgerName && !isRoundOff(le.amount),
+        (le) =>
+            le !== partyEntry &&
+            !le.isPartyLedger &&
+            le.ledgerName !== voucher.partyLedgerName &&
+            !isRoundOff(le.amount),
     )
     if (!bankEntry) bankEntry = voucher.ledgerEntries.find((le) => le !== partyEntry && !isRoundOff(le.amount))
     if (!bankEntry) bankEntry = voucher.ledgerEntries.find((le) => le !== partyEntry)
@@ -45,9 +49,10 @@ export function transformPayment(voucher: TallyVoucher, config: CompanyConfig): 
     if (isTransformError(bankResolved)) {
         if (bankResolved.code === 'UNMAPPED_LEDGER') return { success: false, error: bankResolved }
     }
-    const bankAccount = !isTransformError(bankResolved) && !bankResolved.isRoundOff && bankResolved.account !== '__IGNORE__'
-        ? bankResolved.account
-        : (config.accountMappings['Cash'] ?? 'Cash')
+    const bankAccount =
+        !isTransformError(bankResolved) && !bankResolved.isRoundOff && bankResolved.account !== '__IGNORE__'
+            ? bankResolved.account
+            : (config.accountMappings['Cash'] ?? 'Cash')
 
     const amount = roundInr(absAmount(partyEntry.amount))
 

@@ -135,13 +135,20 @@ export class ERPNextClient {
     /** Ensure a Customer exists in ERPNext with correct GSTIN; create or update if needed. */
     async ensureCustomer(name: string, gstin?: string, customerGroup?: string): Promise<void> {
         try {
-            const existing = await this.getDoc<{ gstin?: string; gst_category?: string; customer_group?: string }>('Customer', name)
+            const existing = await this.getDoc<{ gstin?: string; gst_category?: string; customer_group?: string }>(
+                'Customer',
+                name,
+            )
             const updates: Record<string, unknown> = {}
             if (gstin && !existing.gstin) {
                 updates.gstin = gstin
                 updates.gst_category = 'Registered Regular'
             }
-            if (customerGroup && existing.customer_group === 'All Customer Groups' && customerGroup !== 'All Customer Groups') {
+            if (
+                customerGroup &&
+                existing.customer_group === 'All Customer Groups' &&
+                customerGroup !== 'All Customer Groups'
+            ) {
                 updates.customer_group = customerGroup
             }
             if (Object.keys(updates).length > 0) {
@@ -167,13 +174,20 @@ export class ERPNextClient {
     /** Ensure a Supplier exists in ERPNext with correct GSTIN; create or update if needed. */
     async ensureSupplier(name: string, gstin?: string, supplierGroup?: string): Promise<void> {
         try {
-            const existing = await this.getDoc<{ gstin?: string; gst_category?: string; supplier_group?: string }>('Supplier', name)
+            const existing = await this.getDoc<{ gstin?: string; gst_category?: string; supplier_group?: string }>(
+                'Supplier',
+                name,
+            )
             const updates: Record<string, unknown> = {}
             if (gstin && !existing.gstin) {
                 updates.gstin = gstin
                 updates.gst_category = 'Registered Regular'
             }
-            if (supplierGroup && existing.supplier_group === 'All Supplier Groups' && supplierGroup !== 'All Supplier Groups') {
+            if (
+                supplierGroup &&
+                existing.supplier_group === 'All Supplier Groups' &&
+                supplierGroup !== 'All Supplier Groups'
+            ) {
                 updates.supplier_group = supplierGroup
             }
             if (Object.keys(updates).length > 0) {
@@ -202,7 +216,8 @@ export class ERPNextClient {
             // Update HSN if Tally provides a real one and item has fallback SAC
             const hasRealHsn = hsnCode && hsnCode !== '999111' && hsnCode.length >= 4
             const needsHsnUpdate = hasRealHsn && (!existing.gst_hsn_code || existing.gst_hsn_code === '999111')
-            const needsGroupUpdate = itemGroup && existing.item_group === 'All Item Groups' && itemGroup !== 'All Item Groups'
+            const needsGroupUpdate =
+                itemGroup && existing.item_group === 'All Item Groups' && itemGroup !== 'All Item Groups'
             if (needsHsnUpdate || needsGroupUpdate) {
                 const updates: Record<string, unknown> = {}
                 if (needsHsnUpdate) updates.gst_hsn_code = hsnCode
@@ -230,16 +245,16 @@ export class ERPNextClient {
      * Ensure a company billing address with GSTIN exists in ERPNext.
      * Returns the ERPNext Address name (e.g. "Covai Polymer Traders-Billing").
      */
-    async ensureCompanyAddress(
-        company: string,
-        gstin: string,
-        state?: string,
-        city?: string,
-    ): Promise<string> {
+    async ensureCompanyAddress(company: string, gstin: string, state?: string, city?: string): Promise<string> {
         // Search for existing company address with this GSTIN
         const results = await this.request<Array<{ name: string }>>(
             'GET',
-            `/api/resource/Address?filters=${encodeURIComponent(JSON.stringify([['gstin', '=', gstin], ['is_your_company_address', '=', 1]]))}&fields=["name"]&limit_page_length=1`,
+            `/api/resource/Address?filters=${encodeURIComponent(
+                JSON.stringify([
+                    ['gstin', '=', gstin],
+                    ['is_your_company_address', '=', 1],
+                ]),
+            )}&fields=["name"]&limit_page_length=1`,
         )
         if (results.length > 0) {
             return results[0].name
