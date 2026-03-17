@@ -36,7 +36,7 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - run: cd apps/cloud-frontend && npm ci && npm run build
+      - run: cd apps/cloud-frontend && npm ci && VITE_API_BASE_URL="" npm run build
 
       # Login to GitHub Container Registry
       - uses: docker/login-action@v3

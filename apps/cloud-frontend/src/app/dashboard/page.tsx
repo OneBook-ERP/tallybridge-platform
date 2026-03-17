@@ -120,7 +120,7 @@ export default function CloudDashboard() {
     // Poll cloud health every 30s
     useEffect(() => {
         function check() {
-            fetch('/api/health').then(r => r.json()).then((h: { db?: string; redis?: string }) => {
+            fetch('/health').then(r => r.json()).then((h: { db?: string; redis?: string }) => {
                 setCloudHealth({ db: h.db ?? 'unknown', redis: h.redis ?? 'unknown' })
             }).catch(() => setCloudHealth({ db: 'error', redis: 'error' }))
         }

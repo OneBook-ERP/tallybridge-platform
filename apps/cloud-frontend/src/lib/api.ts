@@ -6,7 +6,8 @@
  */
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api'
-const WS_BASE = import.meta.env.VITE_WS_BASE_URL ?? `ws://${window.location.host}/ws`
+const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+const WS_BASE = import.meta.env.VITE_WS_BASE_URL ?? `${wsProto}//${window.location.host}/ws`
 
 // ---------------------------------------------------------------------------
 // Generic fetch helper
