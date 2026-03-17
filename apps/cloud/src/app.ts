@@ -107,6 +107,16 @@ export async function buildApp() {
     await app.register(connectorDataRoute)
 
     // ── Webhook — ERPNext → Tally ──────────────────────────────────────────────
+    // ERPNext sometimes sends webhooks without a Content-Type header (undefined).
+    // Fastify rejects those with 415. Accept any content-type for the webhook path
+    // by registering a wildcard parser that falls through to JSON.parse.
+    app.addContentTypeParser('*', { parseAs: 'string' }, (_req, body, done) => {
+        try {
+            done(null, JSON.parse(body as string))
+        } catch {
+            done(null, body)
+        }
+    })
     await app.register(erpnextWebhookRoute)
 
     // ── Auth API ─────────────────────────────────────────────────────────────

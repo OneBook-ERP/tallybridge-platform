@@ -43,14 +43,17 @@ const WebhookBodySchema = z.object({
 })
 
 export const erpnextWebhookRoute: FastifyPluginAsync = async (fastify) => {
-    fastify.post<{ Body: unknown }>('/webhook/erpnext', async (request, reply) => {
+    fastify.post<{ Body: unknown; Querystring: { event?: string } }>('/webhook/erpnext', async (request, reply) => {
         const body = WebhookBodySchema.safeParse(request.body)
         if (!body.success) {
             logger.warn({ raw: request.body }, 'Webhook: invalid body')
             return reply.code(400).send({ error: 'Invalid body' })
         }
 
-        const { doctype, name, event } = body.data
+        const { doctype, name } = body.data
+        // event can come from the body OR from ?event=on_submit query param
+        // (Frappe doesn't include event in the webhook body — pass it via URL)
+        const event = body.data.event ?? (request.query as Record<string, string>).event
 
         // Skip if not a supported doctype
         if (!SUPPORTED_DOCTYPES.includes(doctype as SupportedDoctype)) {
