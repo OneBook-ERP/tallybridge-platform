@@ -63,6 +63,8 @@ jobs:
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
+    permissions:
+      packages: read
     steps:
       # Download frontend build
       - uses: actions/download-artifact@v4
@@ -84,12 +86,18 @@ jobs:
       # Pull new image and restart
       - name: Deploy to VM
         uses: appleboy/ssh-action@v1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           host: ${{ secrets.VM_HOST }}
           username: ${{ secrets.VM_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
+          envs: GH_TOKEN
           script: |
             set -e
+
+            # Authenticate with GitHub Container Registry
+            echo "$GH_TOKEN" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
             # Pull the pre-built image (no building on VM)
             docker pull ghcr.io/onebook-erp/tallybridge-cloud:latest
