@@ -1,0 +1,30 @@
+{$DOMAIN:localhost} {
+	# API routes → Fastify backend
+	handle /connector/* {
+		reverse_proxy cloud:3000
+	}
+	handle /dashboard/* {
+		reverse_proxy cloud:3000
+	}
+	handle /webhook/* {
+		reverse_proxy cloud:3000
+	}
+	handle /health {
+		reverse_proxy cloud:3000
+	}
+	handle /ws {
+		reverse_proxy cloud:3000
+	}
+
+	# Frontend SPA — serve static files, fallback to index.html
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+
+	# Logging
+	log {
+		output stdout
+	}
+}
