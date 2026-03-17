@@ -109,7 +109,7 @@ jobs:
             # Verify health (retry up to 30s for migrations + startup)
             for i in $(seq 1 6); do
               sleep 5
-              if curl -sf http://localhost:3000/health; then
+              if docker exec tallybridge-cloud wget -qO- http://127.0.0.1:3000/health; then
                 echo ""
                 echo "Deploy successful — $(date)"
                 exit 0
