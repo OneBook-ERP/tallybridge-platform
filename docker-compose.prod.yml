@@ -40,6 +40,8 @@ services:
       DATABASE_URL: postgres://tallybridge:${POSTGRES_PASSWORD}@postgres:5432/tallybridge
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_CONNECTOR_REPO: ${GITHUB_CONNECTOR_REPO:-OneBook-ERP/tallybridge-connector}
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: 3000
