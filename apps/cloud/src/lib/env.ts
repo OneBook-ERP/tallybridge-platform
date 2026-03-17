@@ -14,6 +14,8 @@ const EnvSchema = z.object({
     ERPNEXT_API_KEY: z.string().optional(),
     ERPNEXT_API_SECRET: z.string().optional(),
     ERPNEXT_WEBHOOK_SECRET: z.string().optional(),
+    GITHUB_TOKEN: z.string().optional(),
+    GITHUB_CONNECTOR_REPO: z.string().default('OneBook-ERP/tallybridge-connector'),
 })
 
 const parsed = EnvSchema.safeParse(process.env)

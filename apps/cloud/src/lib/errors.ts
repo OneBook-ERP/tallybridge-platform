@@ -40,6 +40,12 @@ export class ConflictError extends AppError {
     }
 }
 
+export class ForbiddenError extends AppError {
+    constructor(detail?: string) {
+        super(detail ?? 'Forbidden', 403, 'FORBIDDEN')
+    }
+}
+
 export class RateLimitError extends AppError {
     constructor() {
         super('Rate limit exceeded', 429, 'RATE_LIMIT')

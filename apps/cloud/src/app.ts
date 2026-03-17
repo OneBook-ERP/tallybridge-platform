@@ -19,12 +19,19 @@ import { resultRoute, exceptionRoute } from './api/connector/result'
 
 // Route — Step 17
 import { syncDataRoute } from './api/connector/sync-data'
+import { connectorDataRoute } from './api/connector/data'
 
 // Webhook — ERPNext → Tally
 import { erpnextWebhookRoute } from './api/webhook/erpnext'
 
+// Auth API
+import { authRoutes } from './api/auth/routes'
+
 // Dashboard API
 import { dashboardRoutes } from './api/dashboard/routes'
+
+// Download API (public — connector binaries)
+import { downloadRoutes } from './api/download/routes'
 
 // WebSocket — Step 11
 import { websocketPlugin } from './realtime/websocket'
@@ -97,12 +104,19 @@ export async function buildApp() {
     await app.register(resultRoute)
     await app.register(exceptionRoute)
     await app.register(syncDataRoute)
+    await app.register(connectorDataRoute)
 
     // ── Webhook — ERPNext → Tally ──────────────────────────────────────────────
     await app.register(erpnextWebhookRoute)
 
-    // ── Dashboard API ────────────────────────────────────────────────────────
+    // ── Auth API ─────────────────────────────────────────────────────────────
+    await app.register(authRoutes)
+
+    // ── Dashboard API (protected by JWT auth) ───────────────────────────────
     await app.register(dashboardRoutes)
+
+    // ── Download API (public) ─────────────────────────────────────────────
+    await app.register(downloadRoutes)
 
     // ── WebSocket (Step 11) ────────────────────────────────────────────────────
     await app.register(websocketPlugin)

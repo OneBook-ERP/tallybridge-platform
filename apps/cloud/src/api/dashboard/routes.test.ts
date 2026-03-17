@@ -4,13 +4,19 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import Fastify, { type FastifyInstance } from 'fastify'
 
-const { mockSql, mockErpClient } = vi.hoisted(() => {
+const { mockSql, mockErpClient, mockAdminIdentity } = vi.hoisted(() => {
     const mockSql = Object.assign(
         vi.fn(() => Promise.resolve([])),
         { json: (v: unknown) => v },
     )
     const mockErpClient = { countDocs: vi.fn(() => Promise.resolve(0)) }
-    return { mockSql, mockErpClient }
+    const mockAdminIdentity = {
+        adminId: 'admin-1',
+        email: 'admin@test.com',
+        role: 'superadmin' as const,
+        companyIds: [],
+    }
+    return { mockSql, mockErpClient, mockAdminIdentity }
 })
 
 vi.mock('../../db/db', () => {
@@ -30,6 +36,12 @@ vi.mock('../../sync/opening-balance', () => ({
 }))
 vi.mock('../../lib/logger', () => ({
     logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}))
+vi.mock('../../auth/require-admin', () => ({
+    requireAdmin: async (request: Record<string, unknown>) => {
+        request.adminIdentity = mockAdminIdentity
+    },
+    scopeCompany: (_identity: unknown, companyId?: string) => companyId || undefined,
 }))
 
 import { dashboardRoutes } from './routes'

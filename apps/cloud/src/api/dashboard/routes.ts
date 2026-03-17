@@ -1,28 +1,49 @@
 /**
  * Dashboard API routes — serves data to the cloud-frontend.
- * No auth for now (internal use only during development).
+ * Protected by JWT auth — all routes require a valid admin token.
  */
-import type { FastifyPluginAsync } from 'fastify'
+import type { FastifyPluginAsync, FastifyRequest } from 'fastify'
 import { sql } from '../../db/db'
 import { erpClient } from '../../erpnext/client'
 import { generateOpeningBalance } from '../../sync/opening-balance'
 import { logger } from '../../lib/logger'
+import { requireAdmin, scopeCompany, type AdminIdentity } from '../../auth/require-admin'
+
+type AuthedRequest = FastifyRequest & { adminIdentity: AdminIdentity }
 
 export const dashboardRoutes: FastifyPluginAsync = async (app) => {
-    // GET /dashboard/companies — list all registered companies
-    app.get('/dashboard/companies', async () => {
-        const rows = await sql`
-            SELECT id, machine_id, tally_company_name, erpnext_company,
-                   last_heartbeat_at, created_at
-            FROM companies
-            ORDER BY created_at DESC
-        `
+    // Protect all dashboard routes with JWT auth
+    app.addHook('preHandler', requireAdmin)
+
+    // GET /dashboard/companies — list companies the admin can access
+    app.get('/dashboard/companies', async (req) => {
+        const identity = (req as AuthedRequest).adminIdentity
+
+        let rows
+        if (identity.role === 'superadmin') {
+            rows = await sql`
+                SELECT id, machine_id, tally_company_name, erpnext_company,
+                       last_heartbeat_at, created_at
+                FROM companies
+                ORDER BY created_at DESC
+            `
+        } else {
+            rows = await sql`
+                SELECT c.id, c.machine_id, c.tally_company_name, c.erpnext_company,
+                       c.last_heartbeat_at, c.created_at
+                FROM companies c
+                JOIN admin_company_access aca ON aca.company_id = c.id
+                WHERE aca.admin_id = ${identity.adminId}
+                ORDER BY c.created_at DESC
+            `
+        }
         return { companies: rows }
     })
 
     // GET /dashboard/stats?companyId=... — overview metrics
     app.get<{ Querystring: { companyId?: string } }>('/dashboard/stats', async (req) => {
-        const { companyId } = req.query
+        const identity = (req as AuthedRequest).adminIdentity
+        const companyId = scopeCompany(identity, req.query.companyId)
 
         const [syncCount] = await sql`
             SELECT
@@ -31,14 +52,14 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
                 COUNT(*) FILTER (WHERE sync_status = 'PENDING') AS pending,
                 COUNT(*) FILTER (WHERE sync_status = 'CONFLICT') AS conflicts
             FROM sync_records
-            ${companyId ? sql`WHERE company_id = ${companyId}` : sql``}
+            ${companyId ? sql`WHERE company_id = ${companyId}` : identity.companyIds.length > 0 ? sql`WHERE company_id = ANY(${identity.companyIds})` : sql``}
         `
         const [excCount] = await sql`
             SELECT
                 COUNT(*) FILTER (WHERE resolved_at IS NULL) AS open_exceptions,
                 COUNT(*) AS total_exceptions
             FROM exception_register
-            ${companyId ? sql`WHERE company_id = ${companyId}` : sql``}
+            ${companyId ? sql`WHERE company_id = ${companyId}` : identity.companyIds.length > 0 ? sql`WHERE company_id = ANY(${identity.companyIds})` : sql``}
         `
 
         return {
@@ -53,13 +74,14 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
 
     // GET /dashboard/sync-records?companyId=...&limit=50 — recent sync activity
     app.get<{ Querystring: { companyId?: string; limit?: string } }>('/dashboard/sync-records', async (req) => {
-        const { companyId } = req.query
+        const identity = (req as AuthedRequest).adminIdentity
+        const companyId = scopeCompany(identity, req.query.companyId)
         const limit = Math.min(parseInt(req.query.limit || '50', 10), 200)
 
         const rows = await sql`
             SELECT tally_guid, erpnext_doctype, erpnext_name, sync_status, last_synced_at
             FROM sync_records
-            ${companyId ? sql`WHERE company_id = ${companyId}` : sql``}
+            ${companyId ? sql`WHERE company_id = ${companyId}` : identity.companyIds.length > 0 ? sql`WHERE company_id = ANY(${identity.companyIds})` : sql``}
             ORDER BY last_synced_at DESC
             LIMIT ${limit}
         `
@@ -68,12 +90,13 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
 
     // GET /dashboard/exceptions?companyId=... — open exceptions
     app.get<{ Querystring: { companyId?: string } }>('/dashboard/exceptions', async (req) => {
-        const { companyId } = req.query
+        const identity = (req as AuthedRequest).adminIdentity
+        const companyId = scopeCompany(identity, req.query.companyId)
 
         const rows = await sql`
             SELECT id, tier, document_ref, error_code, error_message, created_at, resolved_at
             FROM exception_register
-            ${companyId ? sql`WHERE company_id = ${companyId}` : sql``}
+            ${companyId ? sql`WHERE company_id = ${companyId}` : identity.companyIds.length > 0 ? sql`WHERE company_id = ANY(${identity.companyIds})` : sql``}
             ORDER BY created_at DESC
             LIMIT 100
         `
@@ -82,13 +105,14 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
 
     // GET /dashboard/audit-log?companyId=...&limit=50 — recent audit entries
     app.get<{ Querystring: { companyId?: string; limit?: string } }>('/dashboard/audit-log', async (req) => {
-        const { companyId } = req.query
+        const identity = (req as AuthedRequest).adminIdentity
+        const companyId = scopeCompany(identity, req.query.companyId)
         const limit = Math.min(parseInt(req.query.limit || '50', 10), 200)
 
         const rows = await sql`
             SELECT id, actor, event_type, document_ref, created_at
             FROM audit_log
-            ${companyId ? sql`WHERE company_id = ${companyId}` : sql``}
+            ${companyId ? sql`WHERE company_id = ${companyId}` : identity.companyIds.length > 0 ? sql`WHERE company_id = ANY(${identity.companyIds})` : sql``}
             ORDER BY created_at DESC
             LIMIT ${limit}
         `
@@ -101,7 +125,9 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
     // connector will re-push the voucher, which now routes correctly.
     // For UNMAPPED_LEDGER: only resolve if the ledger is now mapped.
     app.post<{ Body: { companyId?: string; errorCode?: string } }>('/dashboard/reprocess-exceptions', async (req) => {
-        const { companyId, errorCode } = req.body ?? {}
+        const identity = (req as AuthedRequest).adminIdentity
+        const { errorCode } = req.body ?? {}
+        const companyId = scopeCompany(identity, (req.body as { companyId?: string })?.companyId)
         const code = errorCode ?? 'UNMAPPED_LEDGER'
 
         let resolvedCount = 0
@@ -178,7 +204,9 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
 
     // POST /dashboard/opening-balance — generate opening balance Journal Entry from Tally ledger masters
     app.post<{ Body: { companyId: string; postingDate: string } }>('/dashboard/opening-balance', async (req) => {
-        const { companyId, postingDate } = req.body ?? {}
+        const identity = (req as AuthedRequest).adminIdentity
+        const { postingDate } = req.body ?? {}
+        const companyId = scopeCompany(identity, (req.body as { companyId?: string })?.companyId)
         if (!companyId || !postingDate) {
             return { ok: false, error: 'companyId and postingDate are required' }
         }
@@ -227,7 +255,9 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
     app.post<{ Body: { companyId: string; postingDate: string; warehouse?: string } }>(
         '/dashboard/opening-stock',
         async (req) => {
-            const { companyId, postingDate, warehouse } = req.body ?? {}
+            const identity = (req as AuthedRequest).adminIdentity
+            const { postingDate, warehouse } = req.body ?? {}
+            const companyId = scopeCompany(identity, (req.body as { companyId?: string })?.companyId)
             if (!companyId || !postingDate) {
                 return { ok: false, error: 'companyId and postingDate are required' }
             }
@@ -300,7 +330,9 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
     // POST /dashboard/reset-sync?companyId=...&includeMasters=true — clears sync history but keeps config/mappings
     // Masters (ledger_masters, stock_item_masters) are only cleared when includeMasters=true
     app.post<{ Querystring: { companyId?: string; includeMasters?: string } }>('/dashboard/reset-sync', async (req) => {
-        const { companyId, includeMasters } = req.query
+        const identity = (req as AuthedRequest).adminIdentity
+        const companyId = scopeCompany(identity, req.query.companyId)
+        const { includeMasters } = req.query
         const clearMasters = includeMasters === 'true'
         if (companyId) {
             await sql`DELETE FROM sync_records      WHERE company_id = ${companyId}`
@@ -321,7 +353,8 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
     })
 
     app.get<{ Querystring: { companyId?: string } }>('/dashboard/data-comparison', async (req) => {
-        const { companyId } = req.query
+        const identity = (req as AuthedRequest).adminIdentity
+        const companyId = scopeCompany(identity, req.query.companyId)
 
         // Get company details for ERPNext filtering
         let erpnextCompany: string | null = null
@@ -408,5 +441,170 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
                 .filter((v) => v >= 0)
                 .reduce((a, b) => a + b, 0),
         }
+    })
+
+    // ── Admin Management (superadmin only) ────────────────────────────────────
+
+    // GET /dashboard/admins — list all admins
+    app.get('/dashboard/admins', async (req, reply) => {
+        const identity = (req as AuthedRequest).adminIdentity
+        if (identity.role !== 'superadmin') {
+            reply.code(403).send({ error: 'FORBIDDEN', message: 'Superadmin only' })
+            return
+        }
+
+        const admins = await sql`
+            SELECT a.id, a.email, a.display_name, a.role, a.is_active, a.last_login_at, a.created_at,
+                   COALESCE(
+                       json_agg(json_build_object('id', c.id, 'name', c.tally_company_name))
+                       FILTER (WHERE c.id IS NOT NULL), '[]'
+                   ) AS companies
+            FROM admins a
+            LEFT JOIN admin_company_access aca ON aca.admin_id = a.id
+            LEFT JOIN companies c ON c.id = aca.company_id
+            GROUP BY a.id
+            ORDER BY a.created_at DESC
+        `
+        return { admins }
+    })
+
+    // POST /dashboard/admins — create a new admin
+    app.post<{
+        Body: { email: string; password: string; displayName?: string; role: string; companyIds?: string[] }
+    }>('/dashboard/admins', async (req, reply) => {
+        const identity = (req as AuthedRequest).adminIdentity
+        if (identity.role !== 'superadmin') {
+            reply.code(403).send({ error: 'FORBIDDEN', message: 'Superadmin only' })
+            return
+        }
+
+        const { email, password, displayName, role, companyIds } = req.body ?? ({} as Record<string, unknown>)
+        if (!email || !password || !role) {
+            reply.code(400).send({ error: 'VALIDATION_ERROR', message: 'email, password, and role are required' })
+            return
+        }
+        if (!['superadmin', 'company_admin'].includes(role)) {
+            reply.code(400).send({ error: 'VALIDATION_ERROR', message: 'role must be superadmin or company_admin' })
+            return
+        }
+
+        const { hashPassword } = await import('../../auth/admin-auth')
+        const passwordHash = await hashPassword(password)
+
+        const [admin] = await sql<{ id: string; email: string }[]>`
+            INSERT INTO admins (email, password_hash, role, display_name)
+            VALUES (${(email as string).toLowerCase()}, ${passwordHash}, ${role}, ${displayName ?? null})
+            ON CONFLICT (email) DO NOTHING
+            RETURNING id, email
+        `
+
+        if (!admin) {
+            reply.code(409).send({ error: 'CONFLICT', message: 'Email already exists' })
+            return
+        }
+
+        // Assign companies
+        if (companyIds && Array.isArray(companyIds)) {
+            for (const cid of companyIds) {
+                await sql`
+                    INSERT INTO admin_company_access (admin_id, company_id)
+                    VALUES (${admin.id}, ${cid})
+                    ON CONFLICT DO NOTHING
+                `
+            }
+        }
+
+        logger.info({ adminId: admin.id, email: admin.email, role }, 'Admin created via dashboard')
+        return { ok: true, admin: { id: admin.id, email: admin.email } }
+    })
+
+    // PUT /dashboard/admins/:id — update admin
+    app.put<{
+        Params: { id: string }
+        Body: { displayName?: string; role?: string; isActive?: boolean; password?: string; companyIds?: string[] }
+    }>('/dashboard/admins/:id', async (req, reply) => {
+        const identity = (req as AuthedRequest).adminIdentity
+        if (identity.role !== 'superadmin') {
+            reply.code(403).send({ error: 'FORBIDDEN', message: 'Superadmin only' })
+            return
+        }
+
+        const { id } = req.params
+        const { displayName, role, isActive, password, companyIds } = req.body ?? ({} as Record<string, unknown>)
+
+        // Build SET clause dynamically
+        const sets: string[] = []
+        const values: unknown[] = []
+
+        if (displayName !== undefined) {
+            sets.push('display_name')
+            values.push(displayName)
+        }
+        if (role !== undefined) {
+            if (!['superadmin', 'company_admin'].includes(role as string)) {
+                reply.code(400).send({ error: 'VALIDATION_ERROR', message: 'Invalid role' })
+                return
+            }
+            sets.push('role')
+            values.push(role)
+        }
+        if (isActive !== undefined) {
+            sets.push('is_active')
+            values.push(isActive)
+        }
+        if (password) {
+            const { hashPassword } = await import('../../auth/admin-auth')
+            sets.push('password_hash')
+            values.push(await hashPassword(password as string))
+        }
+
+        if (sets.length > 0) {
+            // Use individual updates since postgres.js tagged templates don't support dynamic SET
+            if (displayName !== undefined)
+                await sql`UPDATE admins SET display_name = ${displayName as string}, updated_at = now() WHERE id = ${id}`
+            if (role !== undefined)
+                await sql`UPDATE admins SET role = ${role as string}, updated_at = now() WHERE id = ${id}`
+            if (isActive !== undefined)
+                await sql`UPDATE admins SET is_active = ${isActive as boolean}, updated_at = now() WHERE id = ${id}`
+            if (password) {
+                const { hashPassword } = await import('../../auth/admin-auth')
+                const hash = await hashPassword(password as string)
+                await sql`UPDATE admins SET password_hash = ${hash}, updated_at = now() WHERE id = ${id}`
+            }
+        }
+
+        // Update company access
+        if (companyIds !== undefined && Array.isArray(companyIds)) {
+            await sql`DELETE FROM admin_company_access WHERE admin_id = ${id}`
+            for (const cid of companyIds) {
+                await sql`
+                    INSERT INTO admin_company_access (admin_id, company_id)
+                    VALUES (${id}, ${cid})
+                    ON CONFLICT DO NOTHING
+                `
+            }
+        }
+
+        logger.info({ adminId: id }, 'Admin updated via dashboard')
+        return { ok: true }
+    })
+
+    // DELETE /dashboard/admins/:id — delete admin
+    app.delete<{ Params: { id: string } }>('/dashboard/admins/:id', async (req, reply) => {
+        const identity = (req as AuthedRequest).adminIdentity
+        if (identity.role !== 'superadmin') {
+            reply.code(403).send({ error: 'FORBIDDEN', message: 'Superadmin only' })
+            return
+        }
+
+        const { id } = req.params
+        if (id === identity.adminId) {
+            reply.code(400).send({ error: 'VALIDATION_ERROR', message: 'Cannot delete your own account' })
+            return
+        }
+
+        await sql`DELETE FROM admins WHERE id = ${id}`
+        logger.info({ adminId: id }, 'Admin deleted via dashboard')
+        return { ok: true }
     })
 }
