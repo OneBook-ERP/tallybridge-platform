@@ -150,6 +150,12 @@ function reverseMapAccount(erpAccount: string, config: CompanyConfig): string {
             }
         }
     }
-    // 3. Return as-is (last resort)
+    // 3. Strip ERPNext company abbreviation suffix (e.g. "Output Tax SGST - B" → "Output Tax SGST")
+    //    ERPNext appends " - ABBR" to all accounts; Tally uses the name without it.
+    if (config.erpnextAbbr) {
+        const suffix = ` - ${config.erpnextAbbr}`
+        if (erpAccount.endsWith(suffix)) return erpAccount.slice(0, -suffix.length)
+    }
+    // 4. Return as-is (last resort)
     return erpAccount
 }

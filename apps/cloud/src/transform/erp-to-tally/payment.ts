@@ -111,5 +111,9 @@ function reverseMapAccount(erpAccount: string, config: CompanyConfig): string {
             }
         }
     }
+    if (config.erpnextAbbr) {
+        const suffix = ` - ${config.erpnextAbbr}`
+        if (erpAccount.endsWith(suffix)) return erpAccount.slice(0, -suffix.length)
+    }
     return erpAccount
 }
