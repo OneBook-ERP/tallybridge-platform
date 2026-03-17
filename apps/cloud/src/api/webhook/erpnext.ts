@@ -38,19 +38,22 @@ type SupportedDoctype = (typeof SUPPORTED_DOCTYPES)[number]
 
 const WebhookBodySchema = z.object({
     doctype: z.string(),
-    name: z.string(),
+    // Frappe v14 uses "name", Frappe v15 renamed it to "id" in webhook payloads
+    name: z.string().optional(),
+    id: z.string().optional(),
     event: z.string().optional(), // on_submit | on_cancel | on_update_after_submit
 })
 
 export const erpnextWebhookRoute: FastifyPluginAsync = async (fastify) => {
     fastify.post<{ Body: unknown; Querystring: { event?: string } }>('/webhook/erpnext', async (request, reply) => {
         const body = WebhookBodySchema.safeParse(request.body)
-        if (!body.success) {
+        if (!body.success || (!body.data.name && !body.data.id)) {
             logger.warn({ raw: request.body }, 'Webhook: invalid body')
             return reply.code(400).send({ error: 'Invalid body' })
         }
 
-        const { doctype, name } = body.data
+        const { doctype } = body.data
+        const name = (body.data.name ?? body.data.id) as string
         // event can come from the body OR from ?event=on_submit query param
         // (Frappe doesn't include event in the webhook body — pass it via URL)
         const event = body.data.event ?? (request.query as Record<string, string>).event
@@ -98,20 +101,28 @@ export const erpnextWebhookRoute: FastifyPluginAsync = async (fastify) => {
             return reply.send({ ok: true, skipped: true, reason: 'no erpnext companies configured' })
         }
 
-        // Fetch the full document from ERPNext using first company's creds
-        // (all companies typically share the same ERPNext instance)
+        // Fetch the full document — try each company's ERPNext URL in turn until one succeeds.
+        // This handles multi-company setups where different companies use different ERPNext instances.
         let fetchCompany = companies[0]!
-        let erpClient = new ERPNextClient({
-            baseUrl: fetchCompany.erpnext_url,
-            apiKey: fetchCompany.erpnext_api_key,
-            apiSecret: fetchCompany.erpnext_api_secret,
-        })
-
-        let fullDoc: Record<string, unknown>
-        try {
-            fullDoc = (await erpClient.getDoc(doctype, name)) as Record<string, unknown>
-        } catch (err) {
-            logger.error({ err, doctype, name }, 'Webhook: failed to fetch doc from ERPNext')
+        let erpClient!: ERPNextClient
+        let fullDoc: Record<string, unknown> | undefined
+        for (const company of companies) {
+            try {
+                const client = new ERPNextClient({
+                    baseUrl: company.erpnext_url,
+                    apiKey: company.erpnext_api_key,
+                    apiSecret: company.erpnext_api_secret,
+                })
+                fullDoc = (await client.getDoc(doctype, name)) as Record<string, unknown>
+                fetchCompany = company
+                erpClient = client
+                break
+            } catch {
+                // try next company
+            }
+        }
+        if (!fullDoc) {
+            logger.error({ doctype, name }, 'Webhook: failed to fetch doc from any ERPNext company')
             return reply.code(500).send({ error: 'Failed to fetch doc from ERPNext' })
         }
 
