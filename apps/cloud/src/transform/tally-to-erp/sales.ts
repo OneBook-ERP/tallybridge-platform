@@ -131,7 +131,10 @@ export function transformSales(voucher: TallyVoucher, config: CompanyConfig): Tr
     // Due date: use bill allocation due date from Tally, fallback to posting date.
     // Filter out zero/invalid dates (Go zero time marshals to "0001-01-01T00:00:00Z").
     const postingDate = tallyDateToErp(voucher.date)
-    const tallyDueDate = voucher.ledgerEntries.flatMap((le) => le.billAllocations ?? []).filter(Boolean).find((ba) => ba.dueDate)?.dueDate
+    const tallyDueDate = voucher.ledgerEntries
+        .flatMap((le) => le.billAllocations ?? [])
+        .filter(Boolean)
+        .find((ba) => ba.dueDate)?.dueDate
     const derivedDueDate = tallyDueDate ? tallyDateToErp(tallyDueDate) : ''
     // Due date must be same or later than posting date; fall back to posting date if missing or earlier
     const dueDate = derivedDueDate && derivedDueDate >= postingDate ? derivedDueDate : postingDate
