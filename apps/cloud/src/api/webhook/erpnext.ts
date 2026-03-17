@@ -37,26 +37,29 @@ const SUPPORTED_DOCTYPES = [
 type SupportedDoctype = (typeof SUPPORTED_DOCTYPES)[number]
 
 const WebhookBodySchema = z.object({
-    doctype: z.string(),
-    // Frappe v14 uses "name", Frappe v15 renamed it to "id" in webhook payloads
+    // Frappe v14 sends "name", Frappe v15 sends "id"
     name: z.string().optional(),
     id: z.string().optional(),
-    event: z.string().optional(), // on_submit | on_cancel | on_update_after_submit
+    // Frappe v15 doesn't reliably send doctype in body — fall back to ?doctype= query param
+    doctype: z.string().optional(),
+    event: z.string().optional(),
 })
 
 export const erpnextWebhookRoute: FastifyPluginAsync = async (fastify) => {
-    fastify.post<{ Body: unknown; Querystring: { event?: string } }>('/webhook/erpnext', async (request, reply) => {
+    fastify.post<{ Body: unknown; Querystring: Record<string, string> }>('/webhook/erpnext', async (request, reply) => {
         const body = WebhookBodySchema.safeParse(request.body)
-        if (!body.success || (!body.data.name && !body.data.id)) {
-            logger.warn({ raw: request.body }, 'Webhook: invalid body')
+        const q = request.query
+        // doc name: body.name → body.id → query param
+        const name = body.data?.name ?? body.data?.id ?? q.name ?? q.id
+        // doctype: body field → query param (Frappe v15 doesn't send it in body)
+        const doctype = body.data?.doctype ?? q.doctype
+        // event: body field → query param
+        const event = body.data?.event ?? q.event
+
+        if (!name || !doctype) {
+            logger.warn({ raw: request.body, query: q }, 'Webhook: invalid body')
             return reply.code(400).send({ error: 'Invalid body' })
         }
-
-        const { doctype } = body.data
-        const name = (body.data.name ?? body.data.id) as string
-        // event can come from the body OR from ?event=on_submit query param
-        // (Frappe doesn't include event in the webhook body — pass it via URL)
-        const event = body.data.event ?? (request.query as Record<string, string>).event
 
         // Skip if not a supported doctype
         if (!SUPPORTED_DOCTYPES.includes(doctype as SupportedDoctype)) {
