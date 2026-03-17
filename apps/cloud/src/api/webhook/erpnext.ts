@@ -22,6 +22,7 @@ import { erpPurchaseToTally } from '../../transform/erp-to-tally/purchase'
 import { erpPaymentToTally } from '../../transform/erp-to-tally/payment'
 import { erpJournalToTally } from '../../transform/erp-to-tally/journal'
 import { buildStockVoucherXML } from '../../transform/erp-to-tally/stock'
+import { buildDefaultMappings } from '../../transform/default-mappings'
 import { logger } from '../../lib/logger'
 import type { CompanyConfig, ERPNextStockEntry } from '../../types'
 
@@ -162,9 +163,27 @@ export const erpnextWebhookRoute: FastifyPluginAsync = async (fastify) => {
                 FROM config_profiles WHERE company_id = ${matchedCompany.id}
             `
 
+        // Load company abbr + GSTIN for reverse-mapping
+        const [coMeta] = await sql<{ erpnext_abbr: string | null; erpnext_gstin: string | null }[]>`
+            SELECT erpnext_abbr, erpnext_gstin FROM companies WHERE id = ${matchedCompany.id}
+        `
+        const abbr = coMeta?.erpnext_abbr ?? ''
+        const { groupDefaultMappings } = buildDefaultMappings(abbr)
+
+        // Load ledger groups from ledger_masters for reverse account mapping
+        const ledgerMasterRows = await sql<{ tally_name: string; tally_group: string | null }[]>`
+            SELECT tally_name, tally_group FROM ledger_masters WHERE company_id = ${matchedCompany.id}
+        `
+        const ledgerGroups: Record<string, string> = {}
+        for (const r of ledgerMasterRows) {
+            if (r.tally_group) ledgerGroups[r.tally_name] = r.tally_group
+        }
+
         const config: CompanyConfig = {
             companyId: matchedCompany.id,
             erpnextCompany: matchedCompany.erpnext_company,
+            erpnextAbbr: abbr,
+            companyGstin: coMeta?.erpnext_gstin ?? '',
             currency: 'INR',
             accountMappings: profile?.account_mappings ?? {},
             gstLedgerMappings: {
@@ -180,6 +199,8 @@ export const erpnextWebhookRoute: FastifyPluginAsync = async (fastify) => {
                 default: 'TALLY_WINS',
             },
             syncDirection: {},
+            ledgerGroups,
+            groupDefaultMappings,
         }
 
         // Transform ERPNext doc → TallyVoucherInput
