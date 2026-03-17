@@ -131,20 +131,25 @@ export function erpSalesToTally(
 }
 
 /** Reverse lookup: ERPNext account → Tally ledger name.
- *  Checks GST ledger mappings first (more specific), then account mappings. */
+ *  1. accountMappings (explicit per-ledger mappings — most specific)
+ *  2. groupDefaultMappings in reverse + ledgerGroups (e.g. "Sales - B" → "Sales Accounts" → first ledger in that group)
+ *  3. Fall back to the ERPNext account name as-is */
 function reverseMapAccount(erpAccount: string, config: CompanyConfig): string {
-    // Check GST ledger mappings first — these are unambiguous
-    for (const [, tallyName] of Object.entries(config.gstLedgerMappings)) {
-        if (tallyName === erpAccount) {
-            // Find the Tally ledger name that maps to this ERPNext account
-            for (const [tally, erp] of Object.entries(config.accountMappings)) {
-                if (erp === erpAccount) return tally
-            }
-        }
-    }
-    // Regular account mappings
+    // 1. Explicit account mappings
     for (const [tally, erp] of Object.entries(config.accountMappings)) {
         if (erp === erpAccount) return tally
     }
+    // 2. Group default mappings in reverse: find which Tally group this ERPNext account
+    //    was derived from, then find the first Tally ledger in that group
+    if (config.groupDefaultMappings && config.ledgerGroups) {
+        for (const [group, defaultErpAccount] of Object.entries(config.groupDefaultMappings)) {
+            if (defaultErpAccount === erpAccount) {
+                for (const [tallyLedger, tallyGroup] of Object.entries(config.ledgerGroups)) {
+                    if (tallyGroup === group) return tallyLedger
+                }
+            }
+        }
+    }
+    // 3. Return as-is (last resort)
     return erpAccount
 }

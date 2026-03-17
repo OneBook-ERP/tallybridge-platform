@@ -85,5 +85,14 @@ function reverseMapAccount(erpAccount: string, config: CompanyConfig): string {
     for (const [tally, erp] of Object.entries(config.accountMappings)) {
         if (erp === erpAccount) return tally
     }
+    if (config.groupDefaultMappings && config.ledgerGroups) {
+        for (const [group, defaultErpAccount] of Object.entries(config.groupDefaultMappings)) {
+            if (defaultErpAccount === erpAccount) {
+                for (const [tallyLedger, tallyGroup] of Object.entries(config.ledgerGroups)) {
+                    if (tallyGroup === group) return tallyLedger
+                }
+            }
+        }
+    }
     return erpAccount
 }
