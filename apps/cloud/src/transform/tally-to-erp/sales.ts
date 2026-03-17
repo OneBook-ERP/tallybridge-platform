@@ -21,19 +21,21 @@ export function transformSales(voucher: TallyVoucher, config: CompanyConfig): Tr
         vtLower.includes('return') ||
         vtLower.includes('credit')
 
-    // Party amount fallback: if the party ledger is CREDITED (negative amount = credit to customer),
-    // this signals a return — the customer was given money back rather than being charged.
-    // Normal Sales: customer Dr (amount positive, isDeemedPositive=true)
-    // Sales Return: customer Cr (amount negative, isDeemedPositive=false)
+    // Fallback: use Tally's isDeemedPositive flag (more reliable than amount sign, which may lack Cr/Dr suffix).
+    // Normal Sales: customer Dr → isDeemedPositive = true
+    // Sales Return: customer Cr → isDeemedPositive = false
     const partyEntries = voucher.ledgerEntries.filter((e) => e.isPartyLedger)
-    const totalPartyAmount = partyEntries.reduce((s, e) => s + e.amount, 0)
-    const isReturnByPartyAmount = !isReturnByName && partyEntries.length > 0 && totalPartyAmount < 0
+    const isReturnByPartyAmount =
+        !isReturnByName && partyEntries.length > 0 && partyEntries.every((e) => !e.isDeemedPositive)
 
+    // Last-resort fallback: check inventory entry amount sign.
+    // Normal sale: inventory amount is positive in Tally's convention.
+    // Sales return: inventory amount is negative (stock coming back in).
     const isReturnByQty =
         !isReturnByName &&
         !isReturnByPartyAmount &&
         voucher.inventoryEntries.length > 0 &&
-        voucher.inventoryEntries.every((e) => e.billedQty < 0 || e.actualQty < 0)
+        voucher.inventoryEntries.every((e) => e.amount < 0)
     const isReturn = isReturnByName || isReturnByPartyAmount || isReturnByQty
 
     // Derive company state from GSTIN if available
@@ -72,7 +74,8 @@ export function transformSales(voucher: TallyVoucher, config: CompanyConfig): Tr
             config.accountMappings['Sales'] ??
             config.accountMappings['Sales Account'] ??
             config.accountMappings['SALES'] ??
-            'Sales'
+            config.groupDefaultMappings?.['Sales Accounts'] ??
+            (config.erpnextAbbr ? `Sales - ${config.erpnextAbbr}` : 'Sales')
         const actualAcct =
             !isTransformError(incomeAcct) && !incomeAcct.isPartyFallback ? incomeAcct.account : defaultIncome
 

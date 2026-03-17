@@ -27,21 +27,21 @@ export function transformPurchase(
         vtLower.includes('debit') ||
         vtLower.includes('return')
 
-    // Fallback: for a Debit Note / Purchase Return, the supplier is DEBITED (amount positive = Dr to supplier).
-    // Normal Purchase: supplier Cr (amount negative, isDeemedPositive=false)
-    // Purchase Return: supplier Dr (amount positive, isDeemedPositive=true) — we're reducing our payable
+    // Fallback: use Tally's isDeemedPositive flag (more reliable than amount sign, which may lack Cr/Dr suffix).
+    // Normal Purchase: supplier Cr → isDeemedPositive = false
+    // Purchase Return: supplier Dr → isDeemedPositive = true (we're reducing our payable)
     const partyEntries = voucher.ledgerEntries.filter((e) => e.isPartyLedger)
-    const totalPartyAmount = partyEntries.reduce((s, e) => s + e.amount, 0)
-    const isReturnByPartyAmount = !isReturnByName && partyEntries.length > 0 && totalPartyAmount > 0
+    const isReturnByPartyAmount =
+        !isReturnByName && partyEntries.length > 0 && partyEntries.every((e) => e.isDeemedPositive)
 
-    // In Tally, NEGATIVE inventory qty = stock inward (normal purchase).
-    // POSITIVE inventory qty = stock outward (purchase return / debit note).
-    // So positive qty across all entries indicates a return.
+    // Last-resort fallback: check inventory entry amount sign.
+    // Normal purchase: stock inward, inventory amount is negative in Tally's convention.
+    // Purchase return: stock outward, inventory amount is positive.
     const isReturnByQty =
         !isReturnByName &&
         !isReturnByPartyAmount &&
         voucher.inventoryEntries.length > 0 &&
-        voucher.inventoryEntries.every((e) => (e.billedQty || e.actualQty) > 0)
+        voucher.inventoryEntries.every((e) => e.amount > 0)
     const isReturn = isReturnByName || isReturnByPartyAmount || isReturnByQty
 
     const companyState =
