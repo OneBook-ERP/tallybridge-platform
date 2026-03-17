@@ -4,23 +4,37 @@
 import type { TallyVoucher, CompanyConfig, ERPNextSalesInvoice, SalesInvoiceItem, TransformResult } from '../../types'
 import { resolveAccount, isTransformError } from '../account-resolver'
 import { resolveGST } from '../gst-resolver'
-import { tallyDateToErp, absAmount, roundInr, sanitiseName, stateFromGstin } from '../utils'
+import { tallyDateToErp, absAmount, roundInr, sanitiseName, stateFromGstin, validGstin } from '../utils'
 
 const FALLBACK_STATE = 'Tamil Nadu' // only used if neither GSTIN nor config.defaultState is set
 
 export function transformSales(voucher: TallyVoucher, config: CompanyConfig): TransformResult<ERPNextSalesInvoice> {
     const warnings: string[] = []
 
-    // Determine if credit note (Sales Return) — check voucher type name first,
-    // then fall back to detecting negative inventory quantities (Tally sometimes
-    // records returns as regular "Sales" vouchers with negative qty/amount).
+    // Determine if credit note (Sales Return).
+    // Priority 1: explicit voucher type name pattern (most reliable)
+    // Priority 2: all party ledger amounts are positive/debit → customer is being debited = return
+    // Priority 3: all inventory quantities are negative (Tally returns recorded as regular Sales)
     const vtLower = voucher.voucherTypeName.toLowerCase()
-    const isReturnByName = vtLower.includes('return') || vtLower.includes('credit')
+    const isReturnByName =
+        /credit.?note|sales.?return|cn/i.test(voucher.voucherTypeName) ||
+        vtLower.includes('return') ||
+        vtLower.includes('credit')
+
+    // Party amount fallback: if the party ledger is CREDITED (negative amount = credit to customer),
+    // this signals a return — the customer was given money back rather than being charged.
+    // Normal Sales: customer Dr (amount positive, isDeemedPositive=true)
+    // Sales Return: customer Cr (amount negative, isDeemedPositive=false)
+    const partyEntries = voucher.ledgerEntries.filter((e) => e.isPartyLedger)
+    const totalPartyAmount = partyEntries.reduce((s, e) => s + e.amount, 0)
+    const isReturnByPartyAmount = !isReturnByName && partyEntries.length > 0 && totalPartyAmount < 0
+
     const isReturnByQty =
         !isReturnByName &&
+        !isReturnByPartyAmount &&
         voucher.inventoryEntries.length > 0 &&
         voucher.inventoryEntries.every((e) => e.billedQty < 0 || e.actualQty < 0)
-    const isReturn = isReturnByName || isReturnByQty
+    const isReturn = isReturnByName || isReturnByPartyAmount || isReturnByQty
 
     // Derive company state from GSTIN if available
     const companyState =
@@ -72,6 +86,7 @@ export function transformSales(voucher: TallyVoucher, config: CompanyConfig): Tr
             amount: absAmount(inv.amount),
             income_account: actualAcct,
             gst_hsn_code: inv.hsnCode || '999111',
+            allow_zero_valuation_rate: 1,
         })
 
         if (!inv.hsnCode) {
@@ -110,10 +125,32 @@ export function transformSales(voucher: TallyVoucher, config: CompanyConfig): Tr
     const taxTotal = roundInr(gst.taxLines.reduce((s, t) => s + t.tax_amount, 0))
     const grandTotal = roundInr(total + taxTotal)
 
-    // Due date: use bill allocation due date from Tally, fallback to posting date
+    // Due date: use bill allocation due date from Tally, fallback to posting date.
+    // Filter out zero/invalid dates (Go zero time marshals to "0001-01-01T00:00:00Z").
     const postingDate = tallyDateToErp(voucher.date)
     const tallyDueDate = voucher.ledgerEntries.flatMap((le) => le.billAllocations).find((ba) => ba.dueDate)?.dueDate
-    const dueDate = tallyDueDate ? tallyDateToErp(tallyDueDate) : postingDate
+    const derivedDueDate = tallyDueDate ? tallyDateToErp(tallyDueDate) : ''
+    // Due date must be same or later than posting date; fall back to posting date if missing or earlier
+    const dueDate = derivedDueDate && derivedDueDate >= postingDate ? derivedDueDate : postingDate
+
+    // Multi-currency: compute conversion_rate from foreignAmount / totalAmount
+    const hasForeignCurrency = !!voucher.foreignCurrency && voucher.foreignCurrency !== 'INR'
+    const computedCurrency = hasForeignCurrency ? voucher.foreignCurrency : (config.currency ?? 'INR')
+    const computedConversionRate =
+        hasForeignCurrency && voucher.foreignAmount && grandTotal
+            ? roundInr(voucher.foreignAmount / grandTotal)
+            : 1
+
+    // Address: join address lines from voucher (populated by engine from ledger_masters raw_data)
+    const customerAddressStr =
+        Array.isArray(voucher.address) && voucher.address.length > 0
+            ? voucher.address.join('\n')
+            : undefined
+
+    // IRN and e-Way Bill fields (irnNo/irn both handled; normalizer maps both)
+    const irnValue = voucher.irn || voucher.irnNo || undefined
+    const irnAckNo = voucher.irnAckNo || undefined
+    const eWayBill = voucher.ewayBillNumber || undefined
 
     const doc: ERPNextSalesInvoice = {
         doctype: 'Sales Invoice',
@@ -127,17 +164,22 @@ export function transformSales(voucher: TallyVoucher, config: CompanyConfig): Tr
         set_warehouse:
             voucher.inventoryEntries.length > 0 && config.defaultWarehouse ? config.defaultWarehouse : undefined,
         is_return: isReturn ? 1 : 0,
-        currency: config.currency,
-        conversion_rate: 1,
+        currency: computedCurrency,
+        conversion_rate: computedConversionRate,
         place_of_supply: gst.placeOfSupply,
         is_inter_state: gst.isInterState ? 1 : 0,
         gst_category: gst.gstCategory,
-        customer_gstin: voucher.partyGSTIN || undefined,
+        customer_gstin: validGstin(voucher.partyGSTIN),
         company_gstin: config.companyGstin || undefined,
         company_address:
             config.companyAddress || (config.companyGstin ? `${config.erpnextCompany}-Billing` : undefined),
         is_rcm_applicable: gst.isRCM ? 1 : 0,
+        ignore_pricing_rule: 1,
         remarks: voucher.narration || undefined,
+        // Address sync
+        customer_address: customerAddressStr,
+        shipping_address_name: customerAddressStr,
+        contact_email: voucher.partyEmail || undefined,
         items,
         taxes: gst.taxLines,
         total,
@@ -147,6 +189,10 @@ export function transformSales(voucher: TallyVoucher, config: CompanyConfig): Tr
         custom_tally_voucher_number: voucher.voucherNumber,
         custom_tally_sync_status: 'Pending',
         custom_sync_source: 'TALLYBRIDGE',
+        // e-Invoice / e-Way Bill
+        custom_ewaybill_no: eWayBill,
+        custom_irn: irnValue,
+        custom_irn_ack_no: irnAckNo,
     }
 
     return { success: true, doc, warnings }

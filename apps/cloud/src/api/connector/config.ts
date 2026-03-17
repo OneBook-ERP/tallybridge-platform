@@ -23,6 +23,9 @@ const ConfigBodySchema = z.object({
     erpnextApiKey: z.string().optional(),
     erpnextApiSecret: z.string().optional(),
     erpnextCompany: z.string().optional(),
+    erpnextGstin: z.string().optional(),
+    erpnextWarehouse: z.string().optional(),
+    erpnextCostCenter: z.string().optional(),
 })
 
 /** Strip meta keys like _type and entries with empty/falsy values */
@@ -106,13 +109,17 @@ export const configRoute: FastifyPluginAsync = async (fastify) => {
             }
 
             // Update companies with ERPNext connection details
-            if (body.erpnextUrl || body.erpnextApiKey || body.erpnextApiSecret || body.erpnextCompany) {
+            if (body.erpnextUrl || body.erpnextApiKey || body.erpnextApiSecret || body.erpnextCompany ||
+                body.erpnextGstin || body.erpnextWarehouse || body.erpnextCostCenter) {
                 await sql`
                     UPDATE companies SET
-                        erpnext_url        = COALESCE(${body.erpnextUrl ?? null}, erpnext_url),
-                        erpnext_api_key    = COALESCE(${body.erpnextApiKey ?? null}, erpnext_api_key),
-                        erpnext_api_secret = COALESCE(${body.erpnextApiSecret ?? null}, erpnext_api_secret),
-                        erpnext_company    = COALESCE(${body.erpnextCompany ?? null}, erpnext_company)
+                        erpnext_url         = COALESCE(${body.erpnextUrl ?? null}, erpnext_url),
+                        erpnext_api_key     = COALESCE(${body.erpnextApiKey ?? null}, erpnext_api_key),
+                        erpnext_api_secret  = COALESCE(${body.erpnextApiSecret ?? null}, erpnext_api_secret),
+                        erpnext_company     = COALESCE(${body.erpnextCompany ?? null}, erpnext_company),
+                        erpnext_gstin       = COALESCE(${body.erpnextGstin ?? null}, erpnext_gstin),
+                        erpnext_warehouse   = COALESCE(${body.erpnextWarehouse ?? null}, erpnext_warehouse),
+                        erpnext_cost_center = COALESCE(${body.erpnextCostCenter ?? null}, erpnext_cost_center)
                     WHERE id = ${body.companyId}
                 `
             }

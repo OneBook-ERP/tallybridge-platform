@@ -19,7 +19,8 @@ export async function apiFetch<T = unknown>(
   const url = `${API_BASE}${path}`
   const res = await fetch(url, {
     headers: {
-      'Content-Type': 'application/json',
+      // Only set Content-Type when there is a body — Fastify rejects application/json with empty body
+      ...(init?.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
       ...init?.headers,
     },
     ...init,

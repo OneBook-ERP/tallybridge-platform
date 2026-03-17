@@ -21,10 +21,19 @@ import { erpSalesToTally } from '../../transform/erp-to-tally/sales'
 import { erpPurchaseToTally } from '../../transform/erp-to-tally/purchase'
 import { erpPaymentToTally } from '../../transform/erp-to-tally/payment'
 import { erpJournalToTally } from '../../transform/erp-to-tally/journal'
+import { buildStockVoucherXML } from '../../transform/erp-to-tally/stock'
 import { logger } from '../../lib/logger'
-import type { CompanyConfig } from '../../types'
+import type { CompanyConfig, ERPNextStockEntry } from '../../types'
 
-const SUPPORTED_DOCTYPES = ['Sales Invoice', 'Purchase Invoice', 'Payment Entry', 'Journal Entry'] as const
+const SUPPORTED_DOCTYPES = [
+    'Sales Invoice',
+    'Purchase Invoice',
+    'Payment Entry',
+    'Journal Entry',
+    'Stock Entry',
+    'Purchase Receipt',
+    'Delivery Note',
+] as const
 type SupportedDoctype = (typeof SUPPORTED_DOCTYPES)[number]
 
 const WebhookBodySchema = z.object({
@@ -184,6 +193,43 @@ export const erpnextWebhookRoute: FastifyPluginAsync = async (fastify) => {
                         unknown
                     >
                     break
+                case 'Stock Entry':
+                    tallyPayload = buildStockVoucherXML(fullDoc as unknown as ERPNextStockEntry, config, action) as unknown as Record<string, unknown>
+                    break
+                case 'Purchase Receipt': {
+                    // Treat as Material Receipt Stock Entry
+                    const receiptAsStock: ERPNextStockEntry = {
+                        doctype: 'Stock Entry',
+                        name: fullDoc.name as string,
+                        stock_entry_type: 'Material Receipt',
+                        posting_date: fullDoc.posting_date as string,
+                        company: fullDoc.company as string,
+                        remarks: fullDoc.remarks as string | undefined,
+                        items: (fullDoc.items as ERPNextStockEntry['items']) ?? [],
+                        custom_tally_guid: fullDoc.custom_tally_guid as string | undefined,
+                        custom_sync_source: fullDoc.custom_sync_source as 'TALLYBRIDGE' | undefined,
+                    }
+                    tallyPayload = buildStockVoucherXML(receiptAsStock, config, action) as unknown as Record<string, unknown>
+                    break
+                }
+                case 'Delivery Note': {
+                    // Treat as Material Issue Stock Entry
+                    const dnAsStock: ERPNextStockEntry = {
+                        doctype: 'Stock Entry',
+                        name: fullDoc.name as string,
+                        stock_entry_type: 'Material Issue',
+                        posting_date: fullDoc.posting_date as string,
+                        company: fullDoc.company as string,
+                        remarks: fullDoc.remarks as string | undefined,
+                        items: (fullDoc.items as ERPNextStockEntry['items']) ?? [],
+                        custom_tally_guid: fullDoc.custom_tally_guid as string | undefined,
+                        custom_sync_source: fullDoc.custom_sync_source as 'TALLYBRIDGE' | undefined,
+                    }
+                    tallyPayload = buildStockVoucherXML(dnAsStock, config, action) as unknown as Record<string, unknown>
+                    break
+                }
+                default:
+                    return reply.send({ ok: true, skipped: true, reason: `doctype ${doctype} not handled` })
             }
         } catch (err) {
             logger.error({ err, doctype, name }, 'Webhook: transform failed')

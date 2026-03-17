@@ -71,6 +71,16 @@ export function resolveAccount(
     // 5. Aggressive party detection — if the ledger name doesn't contain
     //    expense/income/tax keywords, it's almost certainly a customer/supplier
     //    party name (Tally often doesn't set ISPARTYLEDGER on journal entries).
+    //    Exception: if this ledger is known to be a bank/cash account (from
+    //    ledger_masters), don't fall back to party — return unmapped so the
+    //    bank GL account mapping is required.
+    if (config.bankLedgers?.includes(tallyLedger)) {
+        return {
+            code: 'UNMAPPED_LEDGER',
+            message: `Bank/cash ledger "${tallyLedger}" has no ERPNext account mapping. It should be auto-mapped when master data syncs.`,
+            field: tallyLedger,
+        }
+    }
     if (!EXPENSE_KEYWORDS.test(tallyLedger)) {
         return resolveAsParty(config, opts?.partyDirection)
     }

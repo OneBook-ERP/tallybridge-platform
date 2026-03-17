@@ -5,6 +5,11 @@ import type { ERPNextJournalEntry, CompanyConfig } from '../../types'
 import { erpDateToTally, roundInr } from '../utils'
 import type { TallyVoucherInput, TallyLedgerEntryInput } from './sales'
 
+/** Format a cost centre name for Tally: strip ERPNext " - ABBR" suffix. */
+function formatCostCentre(costCenter: string): string {
+    return costCenter.replace(/\s*-\s*[A-Z0-9]+$/, '').trim()
+}
+
 export function erpJournalToTally(
     doc: ERPNextJournalEntry,
     config: CompanyConfig,
@@ -17,12 +22,20 @@ export function erpJournalToTally(
         const isDebit = acct.debit_in_account_currency > 0
         const amount = roundInr(isDebit ? acct.debit_in_account_currency : acct.credit_in_account_currency)
         const tallyLedger = reverseMapAccount(acct.account, config)
+
+        // Cost centre allocation: if ERPNext journal line has a cost_center, write it to Tally
+        const costCentreAllocations =
+            acct.cost_center
+                ? [{ name: formatCostCentre(acct.cost_center), amount }]
+                : undefined
+
         return {
             ledgerName: tallyLedger,
             isDeemedPositive: isDebit,
             isPartyLedger: !!acct.party,
             amount: isDebit ? amount : -amount,
             billAllocations: [],
+            costCentreAllocations,
         }
     })
 

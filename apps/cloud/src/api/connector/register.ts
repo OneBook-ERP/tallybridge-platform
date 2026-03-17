@@ -72,7 +72,7 @@ export const registerRoute: FastifyPluginAsync = async (fastify) => {
           )
           VALUES (
               ${companyId},
-              ${acctMap}, ${gstMap}, ${vtMap}, ${sdMap}
+              ${sql.json(acctMap as never)}, ${sql.json(gstMap as never)}, ${sql.json(vtMap as never)}, ${sql.json(sdMap as never)}
           )
           ON CONFLICT (company_id) DO NOTHING
         `

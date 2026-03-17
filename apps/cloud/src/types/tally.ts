@@ -26,8 +26,28 @@ export interface TallyVoucher {
     isRCMApplicable: boolean
     ewayBillNumber: string
     irnNo: string
+    irn?: string         // e-Invoice IRN (alternate field name from some Tally builds)
+    irnAckNo?: string    // e-Invoice acknowledgment number
+    address?: string[]   // party address lines from ledger data
+    partyEmail?: string  // party email from ledger data
     ledgerEntries: TallyLedgerEntry[]
     inventoryEntries: TallyInventoryEntry[]
+    // Stock Journal fields
+    stockJournalEntries?: TallyStockJournalEntry[]
+}
+
+export interface TallyStockJournalEntry {
+    stockItemName: string
+    godownName?: string              // source godown (for transfers/issues)
+    destinationGodownName?: string   // destination godown (for transfers/receipts)
+    rate: number
+    amount: number
+    actualQty: number
+    actualQtyUOM: string
+    billedQty: number
+    billedQtyUOM: string
+    hsnCode?: string
+    isDeemedPositive: boolean        // true = receipt into godown, false = issue from godown
 }
 
 export interface TallyLedgerEntry {

@@ -11,10 +11,17 @@ export function tallyDateToErp(tallyDate: string): string {
     if (tallyDate.includes('-') || tallyDate.includes('T')) {
         const d = new Date(tallyDate)
         if (isNaN(d.getTime())) return ''
-        return d.toISOString().slice(0, 10)
+        // Use UTC getters to avoid toISOString() returning "+000001-01-01" for year < 1000
+        const y = d.getUTCFullYear()
+        if (y < 2000 || y > 2100) return '' // zero time (0001-01-01) or implausible
+        const m = String(d.getUTCMonth() + 1).padStart(2, '0')
+        const day = String(d.getUTCDate()).padStart(2, '0')
+        return `${y}-${m}-${day}`
     }
     // Legacy yyyymmdd format
     if (tallyDate.length !== 8) return ''
+    const y = parseInt(tallyDate.slice(0, 4), 10)
+    if (y < 2000 || y > 2100) return ''
     return `${tallyDate.slice(0, 4)}-${tallyDate.slice(4, 6)}-${tallyDate.slice(6, 8)}`
 }
 
@@ -99,4 +106,14 @@ const GSTIN_STATE_MAP: Record<string, string> = {
 export function stateFromGstin(gstin: string): string | null {
     if (!gstin || gstin.length < 2) return null
     return GSTIN_STATE_MAP[gstin.slice(0, 2)] ?? null
+}
+
+/** Validate a GSTIN string: must be exactly 15 alphanumeric characters with a valid state code.
+ *  Returns the GSTIN if valid, undefined if invalid/missing. */
+export function validGstin(gstin: string | undefined): string | undefined {
+    if (!gstin) return undefined
+    const clean = gstin.trim().toUpperCase()
+    if (clean.length !== 15) return undefined
+    if (!/^\d{2}[A-Z0-9]{13}$/.test(clean)) return undefined
+    return clean
 }

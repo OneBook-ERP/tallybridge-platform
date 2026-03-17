@@ -95,58 +95,80 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
         return { entries: rows }
     })
 
-    // POST /dashboard/reprocess-exceptions — resolve open exceptions that now have mappings
+    // POST /dashboard/reprocess-exceptions — clear sync_records for failed vouchers so the
+    // connector re-syncs them on next cycle, and mark exceptions as resolved.
+    // For FALLBACK_TO_JOURNAL + ERPNEXT_WRITE_FAILED: we delete the sync_record so the
+    // connector will re-push the voucher, which now routes correctly.
+    // For UNMAPPED_LEDGER: only resolve if the ledger is now mapped.
     app.post<{ Body: { companyId?: string; errorCode?: string } }>('/dashboard/reprocess-exceptions', async (req) => {
         const { companyId, errorCode } = req.body ?? {}
         const code = errorCode ?? 'UNMAPPED_LEDGER'
 
-        // Get the account mappings for the company
         let resolvedCount = 0
+        const retryableCodes = ['FALLBACK_TO_JOURNAL', 'ERPNEXT_WRITE_FAILED', 'MASTER_CREATE_FAILED']
+
         if (companyId) {
-            const [profile] = await sql<{ account_mappings: Record<string, string> }[]>`
+            const openExceptions = await sql<{ id: string; error_message: string; document_ref: string }[]>`
+                SELECT id, error_message, document_ref FROM exception_register
+                WHERE company_id = ${companyId}
+                  AND error_code = ${code}
+                  AND resolved_at IS NULL
+            `
+
+            if (retryableCodes.includes(code)) {
+                // Extract GUIDs from document_ref = 'Voucher:{guid}'
+                const guids = openExceptions
+                    .map(e => e.document_ref.replace(/^Voucher:/, ''))
+                    .filter(Boolean)
+
+                if (guids.length > 0) {
+                    // Delete sync_records so the connector re-sends on next sync
+                    await sql`
+                        DELETE FROM sync_records
+                        WHERE company_id = ${companyId}
+                          AND tally_guid = ANY(${guids})
+                    `
+                }
+                // Mark all as resolved
+                const ids = openExceptions.map(e => e.id)
+                if (ids.length > 0) {
+                    await sql`
+                        UPDATE exception_register
+                        SET resolved_at = now(), resolved_by = 'system:reprocess'
+                        WHERE id = ANY(${ids})
+                    `
+                    resolvedCount = ids.length
+                }
+            } else {
+                // UNMAPPED_LEDGER: only resolve if mapping now exists
+                const [profile] = await sql<{ account_mappings: Record<string, string> }[]>`
                     SELECT account_mappings FROM config_profiles WHERE company_id = ${companyId}
                 `
-            const mappings = profile?.account_mappings ?? {}
-
-            // Find open exceptions matching the error code
-            const openExceptions = await sql<{ id: string; error_message: string; document_ref: string }[]>`
-                    SELECT id, error_message, document_ref FROM exception_register
-                    WHERE company_id = ${companyId}
-                      AND error_code = ${code}
-                      AND resolved_at IS NULL
-                `
-
-            const toResolve: string[] = []
-            for (const exc of openExceptions) {
-                // Extract ledger name from error_message: 'Tally ledger "X" has no...'
-                const match = exc.error_message.match(/Tally ledger "([^"]+)"/)
-                const ledgerName = match?.[1]
-                if (ledgerName && mappings[ledgerName]) {
-                    toResolve.push(exc.id)
+                const mappings = profile?.account_mappings ?? {}
+                const toResolve: string[] = []
+                for (const exc of openExceptions) {
+                    const match = exc.error_message.match(/Tally ledger "([^"]+)"/)
+                    const ledgerName = match?.[1]
+                    if (ledgerName && mappings[ledgerName]) toResolve.push(exc.id)
                 }
-            }
-
-            if (toResolve.length > 0) {
-                await sql`
+                if (toResolve.length > 0) {
+                    await sql`
                         UPDATE exception_register
                         SET resolved_at = now(), resolved_by = 'system:reprocess'
                         WHERE id = ANY(${toResolve})
                     `
-                resolvedCount = toResolve.length
+                    resolvedCount = toResolve.length
+                }
             }
 
-            logger.info(
-                { companyId, code, total: openExceptions.length, resolved: resolvedCount },
-                'Reprocessed exceptions',
-            )
+            logger.info({ companyId, code, total: openExceptions.length, resolved: resolvedCount }, 'Reprocessed exceptions')
         } else {
-            // No companyId — bulk resolve all that match
             const result = await sql`
-                    UPDATE exception_register
-                    SET resolved_at = now(), resolved_by = 'system:reprocess'
-                    WHERE error_code = ${code} AND resolved_at IS NULL
-                    RETURNING id
-                `
+                UPDATE exception_register
+                SET resolved_at = now(), resolved_by = 'system:reprocess'
+                WHERE error_code = ${code} AND resolved_at IS NULL
+                RETURNING id
+            `
             resolvedCount = result.length
         }
 
@@ -165,12 +187,13 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
             {
                 erpnext_company: string
                 erpnext_abbr: string | null
+                erpnext_gstin: string | null
                 erpnext_url: string
                 erpnext_api_key: string
                 erpnext_api_secret: string
             }[]
         >`
-            SELECT erpnext_company, erpnext_abbr, erpnext_url, erpnext_api_key, erpnext_api_secret
+            SELECT erpnext_company, erpnext_abbr, erpnext_gstin, erpnext_url, erpnext_api_key, erpnext_api_secret
             FROM companies WHERE id = ${companyId}
         `
         if (!company) return { ok: false, error: 'Company not found' }
@@ -187,7 +210,7 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
                 postingDate,
                 accountMappings: profile?.account_mappings ?? {},
                 costCenter: `Main - ${company.erpnext_abbr ?? 'CPT'}`,
-                companyGstin: '33AABCZ2616B1ZV',
+                companyGstin: company.erpnext_gstin ?? undefined,
                 erpnextUrl: company.erpnext_url,
                 erpnextApiKey: company.erpnext_api_key,
                 erpnextApiSecret: company.erpnext_api_secret,
@@ -199,7 +222,89 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
         }
     })
 
+    // POST /dashboard/opening-stock — create Opening Stock Reconciliation in ERPNext from stock_item_masters
+    app.post<{ Body: { companyId: string; postingDate: string; warehouse?: string } }>('/dashboard/opening-stock', async (req) => {
+        const { companyId, postingDate, warehouse } = req.body ?? {}
+        if (!companyId || !postingDate) {
+            return { ok: false, error: 'companyId and postingDate are required' }
+        }
+
+        const [company] = await sql<{
+            erpnext_company: string
+            erpnext_abbr: string | null
+            erpnext_url: string
+            erpnext_api_key: string
+            erpnext_api_secret: string
+        }[]>`
+            SELECT erpnext_company, erpnext_abbr, erpnext_url, erpnext_api_key, erpnext_api_secret
+            FROM companies WHERE id = ${companyId}
+        `
+        if (!company) return { ok: false, error: 'Company not found' }
+
+        const abbr = company.erpnext_abbr ?? company.erpnext_company.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 3)
+        const resolvedWarehouse = warehouse ?? `Stores - ${abbr}`
+
+        const openingRows = await sql<{ tally_name: string; opening_qty: number; opening_value: number; uom: string | null }[]>`
+            SELECT tally_name, opening_qty, opening_value, uom
+            FROM stock_item_masters
+            WHERE company_id = ${companyId} AND opening_qty > 0
+        `
+
+        if (openingRows.length === 0) {
+            return { ok: false, error: 'No stock items with opening_qty > 0 found in stock_item_masters' }
+        }
+
+        const { ERPNextClient } = await import('../../erpnext/client')
+        const client = new ERPNextClient({
+            baseUrl: company.erpnext_url,
+            apiKey: company.erpnext_api_key,
+            apiSecret: company.erpnext_api_secret,
+        })
+
+        try {
+            await client.ensureOpeningStockEntry(
+                openingRows.map((r) => ({
+                    itemCode: r.tally_name,
+                    qty: Number(r.opening_qty),
+                    // Tally stores OPENINGVALUE as negative (credit convention) — use abs for valuation rate
+                    rate: r.opening_qty > 0 ? Math.abs(Number(r.opening_value)) / Number(r.opening_qty) : 0,
+                    uom: r.uom ?? 'Nos',
+                })),
+                company.erpnext_company,
+                resolvedWarehouse,
+                postingDate,
+            )
+            return { ok: true, itemCount: openingRows.length, warehouse: resolvedWarehouse }
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err)
+            return { ok: false, error: msg }
+        }
+    })
+
     // GET /dashboard/data-comparison?companyId=... — Tally vs ERPNext document counts
+    // POST /dashboard/reset-sync?companyId=...&includeMasters=true — clears sync history but keeps config/mappings
+    // Masters (ledger_masters, stock_item_masters) are only cleared when includeMasters=true
+    app.post<{ Querystring: { companyId?: string; includeMasters?: string } }>('/dashboard/reset-sync', async (req) => {
+        const { companyId, includeMasters } = req.query
+        const clearMasters = includeMasters === 'true'
+        if (companyId) {
+            await sql`DELETE FROM sync_records      WHERE company_id = ${companyId}`
+            await sql`DELETE FROM exception_register WHERE company_id = ${companyId}`
+            if (clearMasters) {
+                await sql`DELETE FROM ledger_masters    WHERE company_id = ${companyId}`
+                await sql`DELETE FROM stock_item_masters WHERE company_id = ${companyId}`
+            }
+        } else {
+            await sql`TRUNCATE sync_records, exception_register`
+            if (clearMasters) {
+                await sql`TRUNCATE ledger_masters, stock_item_masters`
+            }
+        }
+        // audit_log is immutable so we skip it
+        logger.info({ companyId, clearMasters }, 'Sync history reset via dashboard')
+        return { ok: true }
+    })
+
     app.get<{ Querystring: { companyId?: string } }>('/dashboard/data-comparison', async (req) => {
         const { companyId } = req.query
 

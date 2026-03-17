@@ -6,13 +6,15 @@ import { resolveAccount, isTransformError } from '../account-resolver'
 import { tallyDateToErp, absAmount, roundInr, sanitiseName, isRoundOff } from '../utils'
 
 export function transformJournal(voucher: TallyVoucher, config: CompanyConfig): TransformResult<ERPNextJournalEntry> {
-    const isContra = voucher.voucherTypeName.toLowerCase() === 'contra'
-    const voucherType = isContra ? 'Bank Entry' : 'Journal Entry'
+    const vtLower = voucher.voucherTypeName.toLowerCase()
+    const isContra = vtLower === 'contra' || vtLower.includes('payment') || vtLower.includes('receipt')
+    const voucherType = isContra ? 'Contra Entry' : 'Journal Entry'
 
     const accounts: JournalAccount[] = []
     const warnings: string[] = []
     let totalDebit = 0,
         totalCredit = 0
+    let allIgnored = true // tracks whether every entry was explicitly ignored (__IGNORE__ or non-UNMAPPED error)
 
     for (const le of voucher.ledgerEntries) {
         // Skip round-off entries (Tier 1 auto-correct)
@@ -29,11 +31,14 @@ export function transformJournal(voucher: TallyVoucher, config: CompanyConfig): 
         })
         if (isTransformError(resolved)) {
             if (resolved.code === 'UNMAPPED_LEDGER') return { success: false, error: resolved }
+            // Other resolver errors: entry is skipped but not intentionally ignored
+            allIgnored = false
             continue
         }
         if (resolved.isRoundOff) continue
         if (resolved.account === '__IGNORE__') continue
 
+        allIgnored = false // we have at least one real, mappable entry
         const amt = roundInr(absAmount(le.amount))
 
         // Tally: isDeemedPositive=true means Debit for that ledger
@@ -71,29 +76,45 @@ export function transformJournal(voucher: TallyVoucher, config: CompanyConfig): 
     }
 
     if (accounts.length === 0) {
+        // If every non-round-off entry was deliberately mapped to __IGNORE__, treat as intentionally ignored.
+        // Otherwise it is a genuine transform failure worth flagging.
         return {
             success: false,
-            error: { code: 'TRANSFORM_FAILED', message: 'Journal has no valid ledger entries after filtering' },
+            error: allIgnored
+                ? { code: 'IGNORED_VOUCHER', message: 'All ledger entries are mapped to __IGNORE__ — voucher intentionally skipped' }
+                : { code: 'TRANSFORM_FAILED', message: 'Journal has no valid ledger entries after filtering' },
         }
     }
 
-    // Balance rounding difference — ERPNext requires exact debit == credit
+    // Balance rounding difference — ERPNext requires exact debit == credit.
+    // Tally sometimes produces small imbalances from rounding across multiple tax/discount lines.
+    // We auto-correct differences up to ₹5 by adjusting the last entry on the larger side.
+    // Differences > ₹5 are flagged but still adjusted so the voucher posts rather than hard-failing.
     const roundedDebit = roundInr(totalDebit)
     const roundedCredit = roundInr(totalCredit)
     const diff = roundInr(roundedDebit - roundedCredit)
-    if (diff !== 0 && Math.abs(diff) <= 1) {
-        // Small rounding difference — adjust the larger side
-        if (diff > 0) {
-            // Debit is larger — add credit adjustment to last credit entry
-            const lastCredit = [...accounts].reverse().find((a) => a.credit_in_account_currency > 0)
-            if (lastCredit)
-                lastCredit.credit_in_account_currency = roundInr(lastCredit.credit_in_account_currency + diff)
+    if (diff !== 0) {
+        const absDiff = Math.abs(diff)
+        if (absDiff <= 5) {
+            if (diff > 0) {
+                const lastCredit = [...accounts].reverse().find((a) => a.credit_in_account_currency > 0)
+                if (lastCredit) lastCredit.credit_in_account_currency = roundInr(lastCredit.credit_in_account_currency + diff)
+            } else {
+                const lastDebit = [...accounts].reverse().find((a) => a.debit_in_account_currency > 0)
+                if (lastDebit) lastDebit.debit_in_account_currency = roundInr(lastDebit.debit_in_account_currency - diff)
+            }
+            warnings.push(`Auto-balanced journal: adjusted ₹${absDiff} rounding difference`)
         } else {
-            // Credit is larger — add debit adjustment to last debit entry
-            const lastDebit = [...accounts].reverse().find((a) => a.debit_in_account_currency > 0)
-            if (lastDebit) lastDebit.debit_in_account_currency = roundInr(lastDebit.debit_in_account_currency - diff)
+            // Larger imbalance — adjust last entry and warn (data quality issue in Tally)
+            if (diff > 0) {
+                const lastCredit = [...accounts].reverse().find((a) => a.credit_in_account_currency > 0)
+                if (lastCredit) lastCredit.credit_in_account_currency = roundInr(lastCredit.credit_in_account_currency + diff)
+            } else {
+                const lastDebit = [...accounts].reverse().find((a) => a.debit_in_account_currency > 0)
+                if (lastDebit) lastDebit.debit_in_account_currency = roundInr(lastDebit.debit_in_account_currency - diff)
+            }
+            warnings.push(`Large journal imbalance of ₹${absDiff} force-balanced — review Tally source data`)
         }
-        warnings.push(`Adjusted rounding difference of ₹${Math.abs(diff)} to balance journal`)
     }
 
     let balancedDebit = roundInr(accounts.reduce((s, a) => s + a.debit_in_account_currency, 0))

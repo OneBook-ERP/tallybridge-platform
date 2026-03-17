@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { apiFetch } from '../../lib/api'
 import { useWebSocket } from '../../lib/useWebSocket'
 
@@ -66,6 +66,68 @@ export default function CloudDashboard() {
     const [dataLoading, setDataLoading] = useState(false)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
+    const [resetting, setResetting] = useState(false)
+    const [resetIncludeMasters, setResetIncludeMasters] = useState(false)
+    const [reprocessing, setReprocessing] = useState<string | null>(null)
+    const [openingStockLoading, setOpeningStockLoading] = useState(false)
+    const [openingStockDate, setOpeningStockDate] = useState('2023-04-01')
+    const [openingStockResult, setOpeningStockResult] = useState<{ ok: boolean; message: string } | null>(null)
+    const [cloudHealth, setCloudHealth] = useState<{ db: string; redis: string } | null>(null)
+    const [syncProgress, setSyncProgress] = useState<{ synced: number; errored: number; active: boolean } | null>(null)
+    const prevSyncedRef = useRef<number>(-1)
+    const syncProgressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+    async function handleResetSync() {
+        const mastersWarning = resetIncludeMasters ? '\n\nWARNING: Master data (stock items, ledgers) will also be cleared.\nYou must re-sync the connector before using Sync Opening Stock.' : ''
+        if (!confirm(`This will delete all sync records and exceptions for this company.\nAccount mappings and config are preserved.${mastersWarning}\n\nContinue?`)) return
+        setResetting(true)
+        try {
+            const qs = new URLSearchParams()
+            if (selectedCompanyId) qs.set('companyId', selectedCompanyId)
+            if (resetIncludeMasters) qs.set('includeMasters', 'true')
+            await apiFetch(`/dashboard/reset-sync?${qs}`, { method: 'POST' })
+            setStats(null)
+            setRecords([])
+            setExceptions([])
+            setDataComparison(null)
+            if (selectedCompanyId) {
+                apiFetch<Stats>(`/dashboard/stats?companyId=${selectedCompanyId}`).then(setStats).catch(() => {})
+            }
+        } finally {
+            setResetting(false)
+        }
+    }
+
+    // Poll stats every 3s to detect active sync — drives the progress indicator
+    useEffect(() => {
+        if (!selectedCompanyId) return
+        const t = setInterval(async () => {
+            try {
+                const s = await apiFetch<Stats>(`/dashboard/stats?companyId=${selectedCompanyId}`)
+                setStats(s)
+                const isActive = s.pending > 0 || s.synced !== prevSyncedRef.current
+                if (isActive) {
+                    setSyncProgress({ synced: s.synced, errored: s.errored, active: true })
+                    if (syncProgressTimer.current) clearTimeout(syncProgressTimer.current)
+                    syncProgressTimer.current = setTimeout(() => setSyncProgress(null), 10_000)
+                }
+                prevSyncedRef.current = s.synced
+            } catch { /* ignore */ }
+        }, 3_000)
+        return () => clearInterval(t)
+    }, [selectedCompanyId])
+
+    // Poll cloud health every 30s
+    useEffect(() => {
+        function check() {
+            fetch('/api/health').then(r => r.json()).then((h: { db?: string; redis?: string }) => {
+                setCloudHealth({ db: h.db ?? 'unknown', redis: h.redis ?? 'unknown' })
+            }).catch(() => setCloudHealth({ db: 'error', redis: 'error' }))
+        }
+        check()
+        const t = setInterval(check, 30_000)
+        return () => clearInterval(t)
+    }, [])
 
     // Load companies on mount
     useEffect(() => {
@@ -150,7 +212,7 @@ export default function CloudDashboard() {
                                 {[
                                     { id: 'overview', label: 'Overview' },
                                     { id: 'data', label: 'Data Status' },
-                                    { id: 'exceptions', label: `Exceptions (${openExceptions.length})` },
+                                    { id: 'exceptions', label: `Exceptions (${stats?.openExceptions ?? openExceptions.length})` },
                                     { id: 'activity', label: 'Activity Log' },
                                     { id: 'settings', label: 'Settings' },
                                 ].map(tab => (
@@ -168,7 +230,7 @@ export default function CloudDashboard() {
                             </div>
                         </div>
 
-                        <div className="flex items-center space-x-4">
+                        <div className="flex items-center space-x-3">
                             {companies.length > 1 && (
                                 <select
                                     value={selectedCompanyId}
@@ -180,6 +242,37 @@ export default function CloudDashboard() {
                                     ))}
                                 </select>
                             )}
+
+                            {/* Sync progress pill — only shown during active sync */}
+                            {syncProgress && (
+                                <div className="flex items-center space-x-2 text-sm px-3 py-1.5 rounded-full border bg-blue-50 border-blue-200 shadow-sm min-w-[160px]">
+                                    <div className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></div>
+                                    <div className="flex-1">
+                                        <div className="flex justify-between text-xs font-medium text-blue-700 mb-0.5">
+                                            <span>Syncing…</span>
+                                            <span>{syncProgress.synced} synced</span>
+                                        </div>
+                                        <div className="w-full bg-blue-100 rounded-full h-1 overflow-hidden">
+                                            <div
+                                                className="bg-blue-500 h-1 rounded-full animate-pulse"
+                                                style={{ width: '60%' }}
+                                            />
+                                        </div>
+                                    </div>
+                                    {syncProgress.errored > 0 && (
+                                        <span className="text-xs font-semibold text-red-600">{syncProgress.errored} err</span>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Cloud service status */}
+                            <div className="flex items-center space-x-1.5 text-xs px-2.5 py-1.5 rounded-full border shadow-sm bg-white">
+                                <span className="text-gray-400 font-medium">Cloud</span>
+                                <StatusDot ok={cloudHealth?.db === 'ok'} label="DB" />
+                                <StatusDot ok={cloudHealth?.redis === 'ok'} label="Redis" />
+                            </div>
+
+                            {/* Connector status */}
                             <div className={`flex items-center space-x-2 text-sm px-3 py-1.5 rounded-full border shadow-sm ${
                                 connectorOnline ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
                             }`}>
@@ -375,26 +468,75 @@ export default function CloudDashboard() {
                 {activeTab === 'exceptions' && (
                     <div className="space-y-6">
                         <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Exception Register</h1>
-                        <p className="text-slate-600">Documents that failed data quality gates and require manual correction.</p>
+
+                        {/* Group summary + reprocess buttons */}
+                        {openExceptions.length > 0 && (() => {
+                            const grouped: Record<string, number> = {}
+                            for (const e of openExceptions) grouped[e.error_code] = (grouped[e.error_code] || 0) + 1
+                            const RETRYABLE: Record<string, string> = {
+                                'FALLBACK_TO_JOURNAL': 'Clears sync record so voucher re-syncs as Journal Entry',
+                                'ERPNEXT_WRITE_FAILED': 'Clears sync record so voucher is retried on next connector sync',
+                                'MASTER_CREATE_FAILED': 'Clears sync record so master data creation is retried',
+                            }
+                            return (
+                                <div className="bg-white rounded-xl shadow-sm border p-5 space-y-3">
+                                    <h2 className="text-sm font-semibold text-slate-700">By Error Code</h2>
+                                    <div className="divide-y">
+                                        {Object.entries(grouped).map(([code, count]) => (
+                                            <div key={code} className="flex items-center justify-between py-3 gap-4">
+                                                <div className="flex items-center gap-3">
+                                                    <span className="font-mono text-sm font-bold text-red-700">{code}</span>
+                                                    <span className="text-xs bg-red-50 text-red-600 border border-red-100 rounded px-2 py-0.5">{count}</span>
+                                                    {RETRYABLE[code] && <span className="text-xs text-slate-400">{RETRYABLE[code]}</span>}
+                                                </div>
+                                                {RETRYABLE[code] && (
+                                                    <button
+                                                        disabled={reprocessing === code}
+                                                        onClick={async () => {
+                                                            if (!confirm(`Reprocess ${count} ${code} exceptions?\n\nSync records will be cleared so the connector re-sends these vouchers.`)) return
+                                                            setReprocessing(code)
+                                                            try {
+                                                                await apiFetch('/dashboard/reprocess-exceptions', {
+                                                                    method: 'POST',
+                                                                    body: JSON.stringify({ companyId: selectedCompanyId, errorCode: code }),
+                                                                })
+                                                                const [e] = await Promise.all([
+                                                                    apiFetch<{ exceptions: Exception[] }>(`/dashboard/exceptions?companyId=${selectedCompanyId}`),
+                                                                ])
+                                                                setExceptions(e.exceptions)
+                                                            } catch { /* ignore */ }
+                                                            setReprocessing(null)
+                                                        }}
+                                                        className="text-xs px-3 py-1.5 rounded-lg border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-50 font-medium"
+                                                    >
+                                                        {reprocessing === code ? 'Processing…' : 'Reprocess'}
+                                                    </button>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )
+                        })()}
 
                         {openExceptions.length === 0 ? (
                             <div className="bg-white rounded-xl shadow-sm border p-8 text-center text-gray-400">
                                 No open exceptions. All clear!
                             </div>
                         ) : (
-                            <div className="space-y-4">
+                            <div className="space-y-3">
                                 {openExceptions.map(exc => (
-                                    <div key={exc.id} className="bg-white rounded-xl shadow-sm border border-red-100 p-6">
+                                    <div key={exc.id} className="bg-white rounded-xl shadow-sm border border-red-100 p-4">
                                         <div className="space-y-2">
                                             <div className="flex items-center space-x-3">
-                                                <span className="px-2.5 py-1 text-xs font-bold bg-red-100 text-red-800 rounded-md border border-red-200">
+                                                <span className="px-2 py-0.5 text-xs font-bold bg-red-100 text-red-800 rounded border border-red-200">
                                                     {exc.tier}
                                                 </span>
-                                                <span className="font-semibold text-slate-900">{exc.document_ref}</span>
+                                                <span className="text-xs font-mono text-slate-600">{exc.document_ref}</span>
                                                 <span className="text-xs text-gray-400">{new Date(exc.created_at).toLocaleString()}</span>
                                             </div>
-                                            <div className="text-sm font-medium text-slate-800 bg-slate-50 p-3 rounded-lg border">
-                                                <span className="font-mono text-red-600 mr-2">{exc.error_code}</span>
+                                            <div className="text-sm text-slate-700 bg-slate-50 p-2.5 rounded-lg border">
+                                                <span className="font-mono text-red-600 mr-2 font-bold">{exc.error_code}</span>
                                                 {exc.error_message}
                                             </div>
                                         </div>
@@ -461,10 +603,101 @@ export default function CloudDashboard() {
                                 </div>
                             ))}
                         </div>
+
+                        {/* Opening Stock Sync */}
+                        <div className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
+                            <div>
+                                <h3 className="font-semibold text-lg">Opening Stock Sync</h3>
+                                <p className="text-sm text-gray-500 mt-1">
+                                    Creates a Stock Reconciliation in ERPNext from Tally opening balances stored in master data.
+                                    Run this <strong>once</strong> before the first sync so invoices can deduct stock correctly.
+                                    Requires master data (stock items) to be synced first via the connector.
+                                </p>
+                            </div>
+                            <div className="flex items-end gap-3">
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-600 mb-1">Posting Date (FY start)</label>
+                                    <input
+                                        type="date"
+                                        value={openingStockDate}
+                                        onChange={e => setOpeningStockDate(e.target.value)}
+                                        disabled={openingStockLoading}
+                                        className="border rounded-md px-3 py-1.5 text-sm font-mono"
+                                    />
+                                </div>
+                                <button
+                                    disabled={openingStockLoading || !selectedCompanyId}
+                                    onClick={async () => {
+                                        setOpeningStockLoading(true)
+                                        setOpeningStockResult(null)
+                                        try {
+                                            const res = await apiFetch<{ ok: boolean; itemCount?: number; warehouse?: string; error?: string }>(
+                                                '/dashboard/opening-stock',
+                                                {
+                                                    method: 'POST',
+                                                    body: JSON.stringify({ companyId: selectedCompanyId, postingDate: openingStockDate }),
+                                                }
+                                            )
+                                            if (res.ok) {
+                                                setOpeningStockResult({ ok: true, message: `Created Stock Reconciliation with ${res.itemCount} items in ${res.warehouse}` })
+                                            } else {
+                                                setOpeningStockResult({ ok: false, message: res.error ?? 'Unknown error' })
+                                            }
+                                        } catch (e) {
+                                            setOpeningStockResult({ ok: false, message: String(e) })
+                                        }
+                                        setOpeningStockLoading(false)
+                                    }}
+                                    className="px-4 py-2 rounded-md text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    {openingStockLoading ? 'Syncing…' : 'Sync Opening Stock'}
+                                </button>
+                            </div>
+                            {openingStockResult && (
+                                <div className={`text-sm px-4 py-2 rounded-lg border ${openingStockResult.ok ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-700'}`}>
+                                    {openingStockResult.message}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Danger Zone */}
+                        <div className="bg-white rounded-xl shadow-sm border border-red-100 p-6 space-y-4">
+                            <h3 className="font-semibold text-lg text-red-700">Danger Zone</h3>
+                            <p className="text-sm text-gray-500">
+                                Clears sync records and exceptions for the selected company.
+                                Account mappings and config are <strong>preserved</strong>.
+                                Reset connector watermarks separately before re-syncing.
+                            </p>
+                            <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
+                                <input
+                                    type="checkbox"
+                                    checked={resetIncludeMasters}
+                                    onChange={e => setResetIncludeMasters(e.target.checked)}
+                                    className="rounded"
+                                />
+                                Also clear master data (stock items &amp; ledgers) — required if you re-sync from scratch
+                            </label>
+                            <button
+                                onClick={handleResetSync}
+                                disabled={resetting || !selectedCompanyId}
+                                className="px-4 py-2 rounded-md text-sm font-semibold bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                                {resetting ? 'Resetting…' : 'Reset Sync History'}
+                            </button>
+                        </div>
                     </div>
                 )}
             </main>
         </div>
+    )
+}
+
+function StatusDot({ ok, label }: { ok: boolean | undefined; label: string }) {
+    return (
+        <span className="flex items-center space-x-1">
+            <span className={`w-2 h-2 rounded-full ${ok === undefined ? 'bg-gray-300' : ok ? 'bg-green-500' : 'bg-red-500'}`} />
+            <span className={`font-medium ${ok === undefined ? 'text-gray-400' : ok ? 'text-green-700' : 'text-red-600'}`}>{label}</span>
+        </span>
     )
 }
 

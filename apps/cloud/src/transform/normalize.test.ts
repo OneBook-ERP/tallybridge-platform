@@ -13,15 +13,15 @@ describe('normalizeVoucher', () => {
         const pascal = makePascalCaseVoucher()
         const result = normalizeVoucher(pascal)
 
-        expect(result.guid).toBe('go-guid-001')
+        expect(result.guid).toBe('3b4a4714-7fa1-4344-a9cf-97e8d4168385-00002cf6')
         expect(result.voucherTypeName).toBe('Sales')
-        expect(result.voucherNumber).toBe('SI-GO-001')
-        expect(result.partyLedgerName).toBe('Go Customer')
+        expect(result.voucherNumber).toBe('175')
+        expect(result.partyLedgerName).toBe('ANU POLYMERS')
         expect(result.placeOfSupply).toBe('Tamil Nadu')
-        expect(result.partyGSTIN).toBe('33AABCC9999D1ZA')
+        expect(result.partyGSTIN).toBe('33AAUFA2081K1Z9')
         expect(result.isOptional).toBe(false)
         expect(result.isCancelled).toBe(false)
-        expect(result.narration).toBe('From Go')
+        expect(result.narration).toBe('Being goods sold')
     })
 
     it('converts nested ledger entries', () => {
@@ -30,10 +30,10 @@ describe('normalizeVoucher', () => {
 
         const entries = result.ledgerEntries as Array<Record<string, unknown>>
         expect(entries).toHaveLength(2)
-        expect(entries[0].ledgerName).toBe('Go Customer')
+        expect(entries[0].ledgerName).toBe('ANU POLYMERS')
         expect(entries[0].isPartyLedger).toBe(true)
         expect(entries[0].isDeemedPositive).toBe(true)
-        expect(entries[0].amount).toBe(11800)
+        expect(entries[0].amount).toBe(38645)
     })
 
     it('converts nested bill allocations', () => {
@@ -43,9 +43,9 @@ describe('normalizeVoucher', () => {
         const entries = result.ledgerEntries as Array<Record<string, unknown>>
         const bills = entries[0].billAllocations as Array<Record<string, unknown>>
         expect(bills).toHaveLength(1)
-        expect(bills[0].name).toBe('SI-GO-001')
+        expect(bills[0].name).toBe('175')
         expect(bills[0].billType).toBe('New Ref')
-        expect(bills[0].amount).toBe(11800)
+        expect(bills[0].amount).toBe(38645)
     })
 
     it('converts nested inventory entries', () => {
@@ -54,10 +54,10 @@ describe('normalizeVoucher', () => {
 
         const inv = result.inventoryEntries as Array<Record<string, unknown>>
         expect(inv).toHaveLength(1)
-        expect(inv[0].stockItemName).toBe('Go Widget')
-        expect(inv[0].rate).toBe(100)
-        expect(inv[0].hsnCode).toBe('84719000')
-        expect(inv[0].accountLedgerName).toBe('B2B Sales')
+        expect(inv[0].stockItemName).toBe('HDPE GRANULES')
+        expect(inv[0].rate).toBe(93)
+        expect(inv[0].hsnCode).toBe('999111')
+        expect(inv[0].accountLedgerName).toBe('B2B SALES')
     })
 
     it('preserves unknown keys (forward compatibility)', () => {

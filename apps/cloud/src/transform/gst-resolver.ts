@@ -77,11 +77,21 @@ export function resolveGST(params: GSTResolverParams): GSTAnalysis {
 
     // ── Inter-state detection ────────────────────────────────────────────────
     const partyState = parseStateName(voucher.placeOfSupply)
-    const isInterState = !!partyState && partyState.toLowerCase() !== companyState.toLowerCase()
+    // Overseas is always inter-state in ERPNext India Compliance (export supply)
+    let isInterState =
+        gstCategory === 'Overseas'
+            ? true
+            : !!partyState && partyState.toLowerCase() !== companyState.toLowerCase()
 
     // ── Place of supply in ERPNext format ───────────────────────────────────
-    const stateCode = stateNameToCode(partyState || companyState)
-    const placeOfSupply = stateCode ? `${stateCode}-${partyState || companyState}` : partyState || companyState
+    // Overseas: no Indian state in placeOfSupply → use "96-Other Territory"
+    let placeOfSupply: string
+    if (gstCategory === 'Overseas') {
+        placeOfSupply = '96-Other Territory'
+    } else {
+        const stateCode = stateNameToCode(partyState || companyState)
+        placeOfSupply = stateCode ? `${stateCode}-${partyState || companyState}` : partyState || companyState
+    }
 
     // ── Compute net total (non-party, non-GST ledger amounts) for rate calc ──
     let netTotal = 0
@@ -120,6 +130,37 @@ export function resolveGST(params: GSTResolverParams): GSTAnalysis {
         } as TaxLine)
     }
 
+    // Reconcile inter-state flag and tax accounts — ERPNext requires consistency.
+    const hasIGST = taxLines.some((t) => t.description?.toLowerCase().includes('igst'))
+    const hasCGST_SGST = taxLines.some(
+        (t) => t.description?.toLowerCase().includes('cgst') || t.description?.toLowerCase().includes('sgst'),
+    )
+
+    if (hasIGST && !isInterState) {
+        // IGST ledger used but place-of-supply resolves intra-state → trust Tally's tax type
+        isInterState = true
+    }
+
+    if (isInterState && hasCGST_SGST && !hasIGST) {
+        // Inter-state transaction but Tally charged CGST+SGST.
+        // ERPNext India Compliance rejects CGST/SGST accounts on inter-state invoices.
+        // Merge all CGST+SGST lines into a single IGST line — total tax amount is preserved.
+        const igstAccount =
+            config.gstLedgerMappings?.output_igst ||
+            config.gstLedgerMappings?.input_igst ||
+            'Output Tax IGST'
+        const totalTax = taxLines.reduce((s, t) => s + t.tax_amount, 0)
+        const totalRate = taxLines.reduce((s, t) => s + (t.rate ?? 0), 0)
+        taxLines.length = 0
+        taxLines.push({
+            charge_type: 'On Net Total',
+            account_head: igstAccount,
+            tax_amount: totalTax,
+            rate: totalRate,
+            description: 'IGST (converted from CGST+SGST)',
+        } as TaxLine)
+    }
+
     return {
         isInterState,
         gstCategory,
@@ -135,7 +176,7 @@ function classifyGSTCategory(gstin: string, placeOfSupply: string): GSTCategory 
     if (!gstin) {
         // B2C or overseas based on place of supply
         const state = parseStateName(placeOfSupply)
-        if (!state) return 'Overseas'
+        if (!state || !stateNameToCode(state)) return 'Overseas'
         return 'Unregistered'
     }
     // GSTIN 2nd character '4' = Composition Dealer

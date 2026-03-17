@@ -40,7 +40,7 @@ export type TallyWriteJobName = 'write-to-tally'
 export type SyncJobData = {
     companyId: string
     batchId: string
-    recordType: 'voucher' | 'ledger' | 'stockItem'
+    recordType: 'voucher' | 'ledger' | 'stockItem' | 'stockGroup' | 'uom' | 'godown'
     records: unknown[]
     fromTimestamp: string
     toTimestamp: string

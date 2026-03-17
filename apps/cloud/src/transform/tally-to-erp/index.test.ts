@@ -11,7 +11,13 @@ import {
 } from '../../test/fixtures'
 
 describe('transformVoucher router', () => {
-    const config = makeConfig()
+    const config = makeConfig({
+        accountMappings: {
+            ...makeConfig().accountMappings,
+            'OFFICE RENT': '5209 - Office Rent - TC',
+            'PURCHASES': '1410 - Stock In Hand - TC',
+        },
+    })
 
     it('routes "Sales" to transformSales', () => {
         const result = transformVoucher(makeSalesVoucher(), config)

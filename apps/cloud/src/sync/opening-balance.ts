@@ -45,6 +45,25 @@ export async function generateOpeningBalance(opts: OpeningBalanceOptions): Promi
               })
             : defaultErpClient
 
+    // Idempotency: check for existing JE (may be draft or submitted)
+    const existingGuid = `opening-balance-${opts.companyId}`
+    const existing = await erpClient.findByTallyGUID('Journal Entry', existingGuid)
+    if (existing) {
+        // Check docstatus — if already submitted, we're done
+        const existingDoc = await erpClient.getDoc<{ docstatus?: number }>('Journal Entry', existing)
+        if ((existingDoc.docstatus ?? 0) >= 1) {
+            logger.info({ companyId: opts.companyId, erpName: existing }, 'Opening balance JE already submitted — skipping')
+            return existing
+        }
+        // Draft exists — delete it so we can recreate with the latest filtering logic
+        logger.info({ companyId: opts.companyId, erpName: existing }, 'Deleting stale draft opening balance JE to recreate')
+        try {
+            await erpClient.deleteDoc('Journal Entry', existing)
+        } catch (delErr) {
+            logger.warn({ erpName: existing, delErr }, 'Could not delete draft JE — will attempt to proceed anyway')
+        }
+    }
+
     // Fetch all ledgers with non-zero opening balance
     const rows = await sql<OpeningBalanceRow[]>`
         SELECT tally_name, tally_group, opening_balance, ledger_type, is_party_ledger
@@ -102,18 +121,72 @@ export async function generateOpeningBalance(opts: OpeningBalanceOptions): Promi
         return null
     }
 
-    // Balance the entry with Temporary Opening account if dr != cr
+    // Auto-create any missing GL accounts in ERPNext before posting the JE.
+    // ensureGLAccount takes base name (without "- ABBR") so strip the suffix first.
+    const abbr = opts.erpnextAbbr ?? opts.erpnextCompany.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 3)
+    const abbrSuffix = ` - ${abbr}`
+    const stripAbbr = (name: string) => name.endsWith(abbrSuffix) ? name.slice(0, -abbrSuffix.length) : name
+    for (const acct of accounts) {
+        try {
+            await erpClient.ensureGLAccount(stripAbbr(acct.account), opts.erpnextCompany, abbr)
+        } catch (_) {
+            // best-effort — if it already exists ERPNext will return it; if it fails we'll see the error on JE creation
+        }
+    }
+
+    // Fetch account metadata and filter/adjust each account:
+    //   1. Skip Depreciation accounts — ERPNext requires voucher_type='Depreciation Entry' for them
+    //   2. Skip P&L accounts (root_type Income/Expense) — Opening Entry only allows Balance Sheet accounts
+    //   3. Add is_advance='No' for Payable/Receivable accounts without a party (avoids "check Is Advance" error)
+    const DEPRECIATION_TYPES = new Set(['Accumulated Depreciation', 'Depreciation'])
+    const PL_ROOT_TYPES = new Set(['Income', 'Expense'])
+    const filteredAccounts: JournalAccount[] = []
+    let filteredDebit = 0
+    let filteredCredit = 0
+    for (const acct of accounts) {
+        try {
+            const accountDoc = await erpClient.getDoc<{ account_type?: string; root_type?: string }>('Account', acct.account)
+            if (accountDoc.account_type && DEPRECIATION_TYPES.has(accountDoc.account_type)) {
+                warnings.push(`Skipping depreciation account: ${acct.account} (account_type=${accountDoc.account_type})`)
+                continue
+            }
+            if (accountDoc.root_type && PL_ROOT_TYPES.has(accountDoc.root_type)) {
+                warnings.push(`Skipping P&L account: ${acct.account} (root_type=${accountDoc.root_type}) — not valid in Opening Entry`)
+                continue
+            }
+            // Payable/Receivable without a party needs is_advance='No' to suppress ERPNext warning
+            if (
+                (accountDoc.account_type === 'Payable' || accountDoc.account_type === 'Receivable') &&
+                !acct.party
+            ) {
+                acct.is_advance = 'No'
+            }
+        } catch (_) {
+            // If we can't fetch the account type, include it and let ERPNext validate
+        }
+        filteredAccounts.push(acct)
+        filteredDebit += acct.debit_in_account_currency
+        filteredCredit += acct.credit_in_account_currency
+    }
+    // Replace accounts list with filtered version
+    accounts.length = 0
+    accounts.push(...filteredAccounts)
+    totalDebit = filteredDebit
+    totalCredit = filteredCredit
+
+    // Balance the entry with Temporary Opening account if dr != cr.
+    // Use the mapped "Suspense/Temporary Opening" account from mappings if available,
+    // otherwise fall back to a hardcoded name.
     const diff = Math.round((totalDebit - totalCredit) * 100) / 100
     if (Math.abs(diff) > 0.01) {
-        const suffix =
-            opts.erpnextAbbr ??
-            opts.erpnextCompany
-                .split(' ')
-                .map((w) => w[0])
-                .join('')
-                .toUpperCase()
-                .slice(0, 3)
-        const tempAccount = `Temporary Opening - ${suffix}`
+        const tempAccount =
+            opts.accountMappings['Temporary Opening'] ??
+            opts.accountMappings['SUSPENCES ACCOUNT'] ??
+            opts.accountMappings['Suspense Account'] ??
+            `Temporary Opening - ${abbr}`
+        try {
+            await erpClient.ensureGLAccount(stripAbbr(tempAccount), opts.erpnextCompany, abbr)
+        } catch (_) { /* best-effort */ }
         accounts.push({
             account: tempAccount,
             debit_in_account_currency: diff < 0 ? Math.abs(diff) : 0,
@@ -139,23 +212,47 @@ export async function generateOpeningBalance(opts: OpeningBalanceOptions): Promi
         custom_sync_source: 'TALLYBRIDGE',
     }
 
+    let jeName: string
     try {
         const created = await erpClient.createDoc<{ name: string }>(
             'Journal Entry',
             doc as unknown as Record<string, unknown>,
         )
+        jeName = created.name
         logger.info(
-            { companyId: opts.companyId, erpName: created.name, entries: accounts.length, warnings },
+            { companyId: opts.companyId, erpName: jeName, entries: accounts.length, warnings },
             'Opening balance Journal Entry created',
         )
-
-        // Submit the entry
-        await erpClient.submitDoc('Journal Entry', created.name)
-        logger.info({ erpName: created.name }, 'Opening balance Journal Entry submitted')
-
-        return created.name
     } catch (err) {
-        logger.error({ err, companyId: opts.companyId }, 'Failed to create opening balance Journal Entry')
-        throw err
+        const msg = err instanceof Error ? err.message : String(err)
+        if (/tally guid must be unique/i.test(msg)) {
+            // A draft JE was created in a previous attempt but failed to submit — find it
+            const found = await erpClient.findByTallyGUID('Journal Entry', existingGuid)
+            if (found) {
+                jeName = found
+                logger.info({ companyId: opts.companyId, erpName: jeName }, 'Found existing draft opening balance JE — will try to submit')
+            } else {
+                logger.error({ err, companyId: opts.companyId }, 'Failed to create opening balance Journal Entry')
+                throw err
+            }
+        } else {
+            logger.error({ err, companyId: opts.companyId }, 'Failed to create opening balance Journal Entry')
+            throw err
+        }
     }
+
+    try {
+        await erpClient.submitDoc('Journal Entry', jeName)
+        logger.info({ erpName: jeName }, 'Opening balance Journal Entry submitted')
+    } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        if (/already submitted/i.test(msg)) {
+            logger.info({ erpName: jeName }, 'Opening balance JE was already submitted — returning')
+        } else {
+            logger.error({ err, companyId: opts.companyId }, 'Failed to submit opening balance Journal Entry')
+            throw err
+        }
+    }
+
+    return jeName
 }

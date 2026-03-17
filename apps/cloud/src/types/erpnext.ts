@@ -28,6 +28,8 @@ export interface ERPNextSalesInvoice {
     company_gstin?: string
     company_address?: string
     is_rcm_applicable: 0 | 1
+    ignore_pricing_rule?: 0 | 1
+    payment_terms_template?: string
     remarks?: string
     items: SalesInvoiceItem[]
     taxes: TaxLine[]
@@ -40,6 +42,14 @@ export interface ERPNextSalesInvoice {
     custom_tally_voucher_number?: string
     custom_tally_sync_status?: 'Synced' | 'Pending' | 'Error'
     custom_sync_source?: 'TALLYBRIDGE' // loop-guard marker
+    // e-Invoice / e-Way Bill fields
+    custom_ewaybill_no?: string
+    custom_irn?: string
+    custom_irn_ack_no?: string
+    // Address fields
+    customer_address?: string
+    shipping_address_name?: string
+    contact_email?: string
 }
 
 export interface SalesInvoiceItem {
@@ -56,6 +66,7 @@ export interface SalesInvoiceItem {
     gst_hsn_code?: string
     is_nil_exempt?: 0 | 1
     is_exempt?: 0 | 1
+    allow_zero_valuation_rate?: 0 | 1
 }
 
 export type GSTCategory =
@@ -92,6 +103,7 @@ export interface ERPNextPurchaseInvoice {
     company_gstin?: string
     company_address?: string
     is_rcm_applicable: 0 | 1
+    payment_terms_template?: string
     remarks?: string
     items: PurchaseInvoiceItem[]
     taxes: TaxLine[]
@@ -102,6 +114,13 @@ export interface ERPNextPurchaseInvoice {
     custom_tally_voucher_number?: string
     custom_tally_sync_status?: 'Synced' | 'Pending' | 'Error'
     custom_sync_source?: 'TALLYBRIDGE'
+    // e-Invoice / e-Way Bill fields
+    custom_ewaybill_no?: string
+    custom_irn?: string
+    custom_irn_ack_no?: string
+    // Address fields
+    supplier_address?: string
+    contact_email?: string
 }
 
 export interface PurchaseInvoiceItem {
@@ -112,7 +131,7 @@ export interface PurchaseInvoiceItem {
     uom: string
     rate: number
     amount: number
-    expense_account: string
+    expense_account?: string
     warehouse?: string
     cost_center?: string
     gst_hsn_code?: string
@@ -142,11 +161,19 @@ export interface ERPNextPaymentEntry {
     reference_date?: string
     remarks?: string
     references: PaymentReference[]
+    advance_payment_entries?: AdvancePaymentEntry[]
     cost_center?: string
     company_gstin?: string
     custom_tally_guid?: string
     custom_tally_voucher_number?: string
     custom_sync_source?: 'TALLYBRIDGE'
+}
+
+export interface AdvancePaymentEntry {
+    reference_type: 'Sales Invoice' | 'Purchase Invoice'
+    reference_name: string
+    advance_amount: number
+    allocated_amount: number
 }
 
 export interface PaymentReference {
@@ -186,6 +213,7 @@ export interface JournalAccount {
     reference_name?: string
     user_remark?: string
     cost_center?: string
+    is_advance?: 'Yes' | 'No'
 }
 
 // ── Shared ────────────────────────────────────────────────────────────────────
@@ -199,4 +227,35 @@ export interface TaxLine {
     included_in_print_rate?: 0 | 1
 }
 
-export type ERPNextDocument = ERPNextSalesInvoice | ERPNextPurchaseInvoice | ERPNextPaymentEntry | ERPNextJournalEntry
+// ── Stock Entry ───────────────────────────────────────────────────────────────
+
+export interface ERPNextStockEntry {
+    doctype: 'Stock Entry'
+    name?: string
+    stock_entry_type: 'Material Issue' | 'Material Receipt' | 'Material Transfer' | 'Material Transfer Entry'
+    posting_date: string
+    company: string
+    from_warehouse?: string
+    to_warehouse?: string
+    remarks?: string
+    items: StockEntryItem[]
+    total_amount?: number
+    custom_tally_guid?: string
+    custom_tally_voucher_number?: string
+    custom_sync_source?: 'TALLYBRIDGE'
+}
+
+export interface StockEntryItem {
+    item_code: string
+    item_name?: string
+    qty: number
+    uom: string
+    s_warehouse?: string   // source warehouse (for issue/transfer)
+    t_warehouse?: string   // target warehouse (for receipt/transfer)
+    basic_rate?: number
+    amount?: number
+    cost_center?: string
+    gst_hsn_code?: string
+}
+
+export type ERPNextDocument = ERPNextSalesInvoice | ERPNextPurchaseInvoice | ERPNextPaymentEntry | ERPNextJournalEntry | ERPNextStockEntry

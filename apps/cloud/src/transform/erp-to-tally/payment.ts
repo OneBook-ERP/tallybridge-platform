@@ -20,6 +20,33 @@ export function erpPaymentToTally(
 
     const ledgerEntries: TallyLedgerEntryInput[] = []
 
+    // Build bill allocations: combine Agst Ref (invoice references) + Advance entries
+    const buildBillAllocations = (
+        isPayment: boolean,
+    ): Array<{ name: string; billType: 'Agst Ref' | 'Advance'; amount: number }> => {
+        const allocs: Array<{ name: string; billType: 'Agst Ref' | 'Advance'; amount: number }> = []
+
+        // Regular invoice references
+        for (const r of doc.references) {
+            allocs.push({
+                name: r.reference_name,
+                billType: 'Agst Ref' as const,
+                amount: isPayment ? r.allocated_amount : -r.allocated_amount,
+            })
+        }
+
+        // Advance payment entries → BILLTYPE Advance
+        for (const adv of doc.advance_payment_entries ?? []) {
+            allocs.push({
+                name: adv.reference_name,
+                billType: 'Advance' as const,
+                amount: isPayment ? adv.allocated_amount : -adv.allocated_amount,
+            })
+        }
+
+        return allocs
+    }
+
     if (isReceipt) {
         // Cash/Bank Dr
         ledgerEntries.push({
@@ -29,30 +56,22 @@ export function erpPaymentToTally(
             amount,
             billAllocations: [],
         })
-        // Customer Cr with Agst Ref bill allocations
+        // Customer Cr with Agst Ref / Advance bill allocations
         ledgerEntries.push({
             ledgerName: doc.party,
             isDeemedPositive: false,
             isPartyLedger: true,
             amount: -amount,
-            billAllocations: doc.references.map((r) => ({
-                name: r.reference_name,
-                billType: 'Agst Ref' as const,
-                amount: -r.allocated_amount,
-            })),
+            billAllocations: buildBillAllocations(false),
         })
     } else {
-        // Supplier Dr with Agst Ref
+        // Supplier Dr with Agst Ref / Advance
         ledgerEntries.push({
             ledgerName: doc.party,
             isDeemedPositive: true,
             isPartyLedger: true,
             amount,
-            billAllocations: doc.references.map((r) => ({
-                name: r.reference_name,
-                billType: 'Agst Ref' as const,
-                amount: r.allocated_amount,
-            })),
+            billAllocations: buildBillAllocations(true),
         })
         // Cash/Bank Cr
         ledgerEntries.push({

@@ -6,10 +6,10 @@ describe('resolveAccount', () => {
     const config = makeConfig()
 
     it('resolves exact match from accountMappings', () => {
-        const result = resolveAccount('B2B Sales', config)
+        const result = resolveAccount('B2B SALES', config)
         expect(isTransformError(result)).toBe(false)
         if (!isTransformError(result)) {
-            expect(result.account).toBe('Sales - TC')
+            expect(result.account).toBe('4110 - Sales - TC')
             expect(result.isGST).toBe(false)
             expect(result.isRoundOff).toBe(false)
         }
@@ -95,7 +95,7 @@ describe('party ledger resolution', () => {
         const result = resolveAccount('Some Customer Name', config, { isPartyLedger: true })
         expect(isTransformError(result)).toBe(false)
         if (!isTransformError(result)) {
-            expect(result.account).toBe('Debtors - TC')
+            expect(result.account).toBe('1310 - Debtors - TC')
             expect(result.isPartyFallback).toBe(true)
         }
     })
@@ -107,7 +107,7 @@ describe('party ledger resolution', () => {
         })
         expect(isTransformError(result)).toBe(false)
         if (!isTransformError(result)) {
-            expect(result.account).toBe('Creditors - TC')
+            expect(result.account).toBe('2110 - Creditors - TC')
             expect(result.isPartyFallback).toBe(true)
         }
     })
@@ -118,7 +118,7 @@ describe('party ledger resolution', () => {
         })
         expect(isTransformError(result)).toBe(false)
         if (!isTransformError(result)) {
-            expect(result.account).toBe('Debtors - TC')
+            expect(result.account).toBe('1310 - Debtors - TC')
             expect(result.isPartyFallback).toBe(true)
         }
     })
@@ -142,7 +142,7 @@ describe('aggressive party detection', () => {
         expect(isTransformError(result)).toBe(false)
         if (!isTransformError(result)) {
             expect(result.isPartyFallback).toBe(true)
-            expect(result.account).toBe('Debtors - TC')
+            expect(result.account).toBe('1310 - Debtors - TC')
         }
     })
 
@@ -173,7 +173,7 @@ describe('aggressive party detection', () => {
         const result = resolveAccount('ABC Traders', config, { partyDirection: 'creditor' })
         expect(isTransformError(result)).toBe(false)
         if (!isTransformError(result)) {
-            expect(result.account).toBe('Creditors - TC')
+            expect(result.account).toBe('2110 - Creditors - TC')
         }
     })
 })

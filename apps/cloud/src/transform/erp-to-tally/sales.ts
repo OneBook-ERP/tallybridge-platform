@@ -29,6 +29,12 @@ export interface TallyLedgerEntryInput {
     isPartyLedger: boolean
     amount: number
     billAllocations: TallyBillAllocationInput[]
+    costCentreAllocations?: TallyCostCentreAllocationInput[]
+}
+
+export interface TallyCostCentreAllocationInput {
+    name: string    // cost centre name (Tally name, without ABBR suffix)
+    amount: number  // positive amount
 }
 
 export interface TallyBillAllocationInput {

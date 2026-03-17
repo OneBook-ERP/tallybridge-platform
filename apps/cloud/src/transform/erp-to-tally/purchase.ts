@@ -17,7 +17,7 @@ export function erpPurchaseToTally(
 
     // Purchase expense Dr entries first
     for (const item of doc.items) {
-        const tallyLedger = reverseMapAccount(item.expense_account, config)
+        const tallyLedger = reverseMapAccount(item.expense_account ?? '', config)
         ledgerEntries.push({
             ledgerName: tallyLedger,
             isDeemedPositive: true,

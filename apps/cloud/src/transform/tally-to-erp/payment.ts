@@ -7,7 +7,7 @@
  * Bank allocations → reference_no, reference_date
  * Bill allocations (Agst Ref) → Payment References linked to invoices
  */
-import type { TallyVoucher, CompanyConfig, ERPNextPaymentEntry, PaymentReference, TransformResult } from '../../types'
+import type { TallyVoucher, CompanyConfig, ERPNextPaymentEntry, PaymentReference, AdvancePaymentEntry, TransformResult } from '../../types'
 import { resolveAccount, isTransformError } from '../account-resolver'
 import { tallyDateToErp, absAmount, roundInr, sanitiseName, isRoundOff } from '../utils'
 
@@ -28,6 +28,19 @@ export function transformPayment(voucher: TallyVoucher, config: CompanyConfig): 
                 code: 'TRANSFORM_FAILED',
                 message: 'Payment voucher has no party ledger entry',
                 field: 'ledgerEntries',
+            },
+        }
+    }
+
+    // If the party ledger is a bank/cash account (bank-to-bank transfer), this should be a
+    // Journal Entry (Contra), not a Payment Entry. Signal the router to fall back.
+    const bankLedgers = config.bankLedgers ?? []
+    if (bankLedgers.includes(partyEntry.ledgerName)) {
+        return {
+            success: false,
+            error: {
+                code: 'FALLBACK_TO_JOURNAL',
+                message: `Party ledger "${partyEntry.ledgerName}" is a bank/cash account — route as Journal Entry`,
             },
         }
     }
@@ -58,29 +71,58 @@ export function transformPayment(voucher: TallyVoucher, config: CompanyConfig): 
 
     // Bank allocation → UTR / cheque details
     const bankAlloc = partyEntry.bankAllocations?.[0] ?? bankEntry?.bankAllocations?.[0]
-    const referenceNo = bankAlloc?.uniqueReferenceNumber || bankAlloc?.instNumber || undefined
-    const referenceDate = referenceNo ? tallyDateToErp(voucher.date) : undefined
+    // ERPNext requires non-empty reference_no/date for bank account transactions.
+    // Chain through all available sources; final fallback uses last 12 chars of GUID so it's always unique and non-empty.
+    const referenceNo =
+        bankAlloc?.uniqueReferenceNumber ||
+        bankAlloc?.instNumber ||
+        voucher.voucherNumber ||
+        `TLY-${voucher.guid.slice(-12)}`
+    const referenceDate = tallyDateToErp(voucher.date) || new Date().toISOString().slice(0, 10)
 
-    // Bill allocations (Agst Ref) → payment references
+    // Bill allocations → payment references (Agst Ref) and advance entries (Advance)
     const references: PaymentReference[] = []
+    const advanceEntries: AdvancePaymentEntry[] = []
+    let hasOnAccountAllocation = false
+
     for (const le of voucher.ledgerEntries) {
         for (const ba of le.billAllocations) {
-            if (ba.billType !== 'Agst Ref') continue
-            // reference_name will be resolved by sync engine against sync_records table
-            references.push({
-                reference_doctype: isReceipt ? 'Sales Invoice' : 'Purchase Invoice',
-                reference_name: ba.name, // voucher number — engine will resolve to name
-                allocated_amount: absAmount(ba.amount),
-            })
+            if (ba.billType === 'Agst Ref') {
+                // reference_name will be resolved by sync engine against sync_records table
+                references.push({
+                    reference_doctype: isReceipt ? 'Sales Invoice' : 'Purchase Invoice',
+                    reference_name: ba.name, // voucher number — engine will resolve to name
+                    allocated_amount: absAmount(ba.amount),
+                })
+            } else if (ba.billType === 'Advance') {
+                // Advance payment: track separately
+                advanceEntries.push({
+                    reference_type: isReceipt ? 'Sales Invoice' : 'Purchase Invoice',
+                    reference_name: ba.name,
+                    advance_amount: absAmount(ba.amount),
+                    allocated_amount: absAmount(ba.amount),
+                })
+            } else if (ba.billType === 'New Ref') {
+                // "On Account" / new reference: payment without prior invoice reference
+                hasOnAccountAllocation = true
+            }
         }
     }
 
+    // When Advance bill allocations are present and this is a "Pay" type,
+    // override paid_to to point at the advance ledger account (party's payable).
+    // For On Account payments (no prior invoice), references will be empty — unallocated.
+    const effectivePaymentType =
+        advanceEntries.length > 0 && !isReceipt ? 'Pay' : paymentType
+
+    const partyName = sanitiseName(partyEntry.ledgerName || voucher.partyLedgerName || 'Unknown Party')
+
     const doc: ERPNextPaymentEntry = {
         doctype: 'Payment Entry',
-        payment_type: paymentType,
+        payment_type: effectivePaymentType,
         posting_date: tallyDateToErp(voucher.date),
         party_type: partyType,
-        party: sanitiseName(voucher.partyLedgerName),
+        party: partyName,
         company: config.erpnextCompany,
         paid_from: isReceipt ? debtorsAccount(config) : bankAccount,
         paid_to: isReceipt ? bankAccount : creditorsAccount(config),
@@ -93,7 +135,9 @@ export function transformPayment(voucher: TallyVoucher, config: CompanyConfig): 
         reference_no: referenceNo,
         reference_date: referenceDate,
         remarks: voucher.narration || undefined,
-        references,
+        // On Account payments: references is intentionally empty (unallocated)
+        references: hasOnAccountAllocation && references.length === 0 ? [] : references,
+        advance_payment_entries: advanceEntries.length > 0 ? advanceEntries : undefined,
         cost_center: config.costCenter || undefined,
         company_gstin: config.companyGstin || undefined,
         custom_tally_guid: voucher.guid,

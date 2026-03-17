@@ -87,7 +87,7 @@ export async function recordConflict(
 ): Promise<void> {
     await sql`
     INSERT INTO conflict_log (company_id, tally_guid, tally_snapshot, erpnext_snapshot)
-    VALUES (${companyId}, ${guid}, ${JSON.stringify(tallySnapshot)}::jsonb, ${JSON.stringify(erpnextSnapshot)}::jsonb)
+    VALUES (${companyId}, ${guid}, ${sql.json(tallySnapshot)}, ${sql.json(erpnextSnapshot)})
     ON CONFLICT DO NOTHING
   `
 

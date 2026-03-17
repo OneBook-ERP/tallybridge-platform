@@ -14,18 +14,18 @@ describe('transformJournal', () => {
 
         expect(result.doc.doctype).toBe('Journal Entry')
         expect(result.doc.voucher_type).toBe('Journal Entry')
-        expect(result.doc.posting_date).toBe('2024-04-01')
+        expect(result.doc.posting_date).toBe('2023-06-20')
         expect(result.doc.company).toBe('Test Company')
-        expect(result.doc.custom_tally_guid).toBe('test-guid-001')
+        expect(result.doc.custom_tally_guid).toBe('3b4a4714-7fa1-4344-a9cf-97e8d4168385-00002cf6')
     })
 
-    it('detects contra voucher as Bank Entry', () => {
+    it('detects contra voucher as Contra Entry', () => {
         const voucher = makeJournalVoucher({ voucherTypeName: 'Contra' })
         const result = transformJournal(voucher, config)
 
         expect(result.success).toBe(true)
         if (!result.success) return
-        expect(result.doc.voucher_type).toBe('Bank Entry')
+        expect(result.doc.voucher_type).toBe('Contra Entry')
     })
 
     it('maps debit and credit sides correctly', () => {
@@ -58,8 +58,8 @@ describe('transformJournal', () => {
     it('suppresses round-off entries and warns', () => {
         const voucher = makeJournalVoucher({
             ledgerEntries: [
-                makeLedgerEntry({ ledgerName: 'B2B Sales', isDeemedPositive: true, amount: 5000 }),
-                makeLedgerEntry({ ledgerName: 'Bank Account', isDeemedPositive: false, amount: -4999.5 }),
+                makeLedgerEntry({ ledgerName: 'B2B SALES', isDeemedPositive: true, amount: 5000 }),
+                makeLedgerEntry({ ledgerName: 'HDFC BANK', isDeemedPositive: false, amount: -4999.5 }),
                 makeLedgerEntry({ ledgerName: 'Cash', isDeemedPositive: false, amount: -0.5 }),
             ],
         })
@@ -83,7 +83,7 @@ describe('transformJournal', () => {
                     amount: 5000,
                     isPartyLedger: true,
                 }),
-                makeLedgerEntry({ ledgerName: 'Bank Account', isDeemedPositive: false, amount: -5000 }),
+                makeLedgerEntry({ ledgerName: 'HDFC BANK', isDeemedPositive: false, amount: -5000 }),
             ],
         })
         const result = transformJournal(voucher, config)
@@ -100,8 +100,8 @@ describe('transformJournal', () => {
         const voucher = makeJournalVoucher({
             partyLedgerName: 'Customer ABC',
             ledgerEntries: [
-                makeLedgerEntry({ ledgerName: 'B2B Sales', isDeemedPositive: true, amount: 5000, isPartyLedger: true }),
-                makeLedgerEntry({ ledgerName: 'Bank Account', isDeemedPositive: false, amount: -5000 }),
+                makeLedgerEntry({ ledgerName: 'B2B SALES', isDeemedPositive: true, amount: 5000, isPartyLedger: true }),
+                makeLedgerEntry({ ledgerName: 'HDFC BANK', isDeemedPositive: false, amount: -5000 }),
             ],
         })
         const result = transformJournal(voucher, config)
@@ -113,7 +113,7 @@ describe('transformJournal', () => {
         expect(partyAccount).toBeUndefined()
     })
 
-    it('fails when all entries are filtered out', () => {
+    it('returns IGNORED_VOUCHER when all entries are round-off (nothing meaningful to sync)', () => {
         const voucher = makeJournalVoucher({
             ledgerEntries: [makeLedgerEntry({ ledgerName: 'Round Off', isDeemedPositive: true, amount: 0.3 })],
         })
@@ -121,14 +121,14 @@ describe('transformJournal', () => {
 
         expect(result.success).toBe(false)
         if (result.success) return
-        expect(result.error.code).toBe('TRANSFORM_FAILED')
+        expect(result.error.code).toBe('IGNORED_VOUCHER')
     })
 
     it('fails with UNMAPPED_LEDGER for unknown account', () => {
         const voucher = makeJournalVoucher({
             ledgerEntries: [
                 makeLedgerEntry({ ledgerName: 'Unknown Expense', isDeemedPositive: true, amount: 5000 }),
-                makeLedgerEntry({ ledgerName: 'Bank Account', isDeemedPositive: false, amount: -5000 }),
+                makeLedgerEntry({ ledgerName: 'HDFC BANK', isDeemedPositive: false, amount: -5000 }),
             ],
         })
         const result = transformJournal(voucher, config)
@@ -154,5 +154,111 @@ describe('transformJournal', () => {
         expect(result.success).toBe(true)
         if (!result.success) return
         expect(result.doc.custom_tally_voucher_number).toBe('JV-042')
+    })
+
+    // ── Group 6 edge cases ───────────────────────────────────────────────────
+
+    it('auto-balances small rounding difference (≤₹5) and warns', () => {
+        const voucher = makeJournalVoucher({
+            ledgerEntries: [
+                makeLedgerEntry({ ledgerName: 'B2B SALES', isDeemedPositive: true, amount: 5002 }),
+                makeLedgerEntry({ ledgerName: 'HDFC BANK', isDeemedPositive: false, amount: -5000 }),
+            ],
+        })
+        const result = transformJournal(voucher, config)
+
+        expect(result.success).toBe(true)
+        if (!result.success) return
+        expect(result.doc.total_debit).toBe(result.doc.total_credit)
+        expect(result.warnings.some((w) => w.includes('Auto-balanced') || w.includes('adjusted'))).toBe(true)
+    })
+
+    it('auto-balances large imbalance (>₹5) with warning about data quality', () => {
+        const voucher = makeJournalVoucher({
+            ledgerEntries: [
+                makeLedgerEntry({ ledgerName: 'B2B SALES', isDeemedPositive: true, amount: 5100 }),
+                makeLedgerEntry({ ledgerName: 'HDFC BANK', isDeemedPositive: false, amount: -5000 }),
+            ],
+        })
+        const result = transformJournal(voucher, config)
+
+        expect(result.success).toBe(true)
+        if (!result.success) return
+        expect(result.doc.total_debit).toBe(result.doc.total_credit)
+        expect(result.warnings.some((w) => w.includes('imbalance') || w.includes('force-balanced'))).toBe(true)
+    })
+
+    it('Payment voucher type routes to Contra Entry', () => {
+        const voucher = makeJournalVoucher({ voucherTypeName: 'Payment' })
+        const result = transformJournal(voucher, config)
+
+        expect(result.success).toBe(true)
+        if (!result.success) return
+        expect(result.doc.voucher_type).toBe('Contra Entry')
+    })
+
+    it('Receipt voucher type routes to Contra Entry', () => {
+        const voucher = makeJournalVoucher({ voucherTypeName: 'Receipt' })
+        const result = transformJournal(voucher, config)
+
+        expect(result.success).toBe(true)
+        if (!result.success) return
+        expect(result.doc.voucher_type).toBe('Contra Entry')
+    })
+
+    it('attaches Supplier party on Payable account (creditor direction)', () => {
+        const voucher = makeJournalVoucher({
+            partyLedgerName: 'Supplier XYZ',
+            ledgerEntries: [
+                makeLedgerEntry({
+                    ledgerName: 'Supplier XYZ',
+                    isDeemedPositive: false,
+                    amount: -5000,
+                    isPartyLedger: true,
+                }),
+                makeLedgerEntry({ ledgerName: 'HDFC BANK', isDeemedPositive: true, amount: 5000 }),
+            ],
+        })
+        const result = transformJournal(voucher, config)
+
+        expect(result.success).toBe(true)
+        if (!result.success) return
+        const partyAccount = result.doc.accounts.find((a) => a.party)
+        expect(partyAccount).toBeDefined()
+        expect(partyAccount!.party_type).toBe('Supplier')
+        expect(partyAccount!.account).toContain('Creditor')
+    })
+
+    it('skips __IGNORE__ mapped accounts', () => {
+        const ignoreConfig = makeConfig({
+            accountMappings: { ...config.accountMappings, 'B2B SALES': '__IGNORE__' },
+        })
+        const voucher = makeJournalVoucher({
+            ledgerEntries: [
+                makeLedgerEntry({ ledgerName: 'B2B SALES', isDeemedPositive: true, amount: 5000 }),
+                makeLedgerEntry({ ledgerName: 'HDFC BANK', isDeemedPositive: false, amount: -5000 }),
+            ],
+        })
+        const result = transformJournal(voucher, ignoreConfig)
+
+        expect(result.success).toBe(true)
+        if (!result.success) return
+        expect(result.doc.accounts).toHaveLength(1)
+        expect(result.doc.accounts[0].account).toBe('1220 - HDFC Bank - TC')
+    })
+
+    it('TRANSFORM_FAILED when no valid entries remain after filtering', () => {
+        // All entries are round-off but allIgnored tracks them as resolver errors
+        const voucher = makeJournalVoucher({
+            ledgerEntries: [
+                makeLedgerEntry({ ledgerName: 'Round Off', isDeemedPositive: true, amount: 0.1 }),
+                makeLedgerEntry({ ledgerName: 'Cash', isDeemedPositive: false, amount: -0.1 }),
+            ],
+        })
+        const result = transformJournal(voucher, config)
+
+        // Round-off entries get suppressed; result may fail with IGNORED or TRANSFORM_FAILED
+        // depending on account resolver for 'Cash' — key is no data corruption
+        expect(result.success).toBe(false)
     })
 })

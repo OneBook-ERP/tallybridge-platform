@@ -84,6 +84,26 @@ export class ERPNextClient {
         return this.request<T>('GET', `/api/resource/${encodeURIComponent(doctype)}/${encodeURIComponent(name)}`)
     }
 
+    async listDocs<T = Record<string, unknown>>(
+        doctype: string,
+        filters: unknown[][],
+        fields: string[],
+        orderBy?: string,
+        limit = 20,
+    ): Promise<T[]> {
+        const params = new URLSearchParams({
+            filters: JSON.stringify(filters),
+            fields: JSON.stringify(fields),
+            limit_page_length: String(limit),
+        })
+        if (orderBy) params.set('order_by', orderBy)
+        const results = await this.request<T[]>(
+            'GET',
+            `/api/resource/${encodeURIComponent(doctype)}?${params.toString()}`,
+        )
+        return results ?? []
+    }
+
     async findByTallyGUID(doctype: string, guid: string): Promise<string | null> {
         // request() extracts json.data, so result is the array directly
         const results = await this.request<Array<{ name: string }>>(
@@ -132,29 +152,18 @@ export class ERPNextClient {
         })
     }
 
+    async deleteDoc(doctype: string, name: string): Promise<void> {
+        await this.request('DELETE', `/api/resource/${encodeURIComponent(doctype)}/${encodeURIComponent(name)}`)
+    }
+
     /** Ensure a Customer exists in ERPNext with correct GSTIN; create or update if needed. */
     async ensureCustomer(name: string, gstin?: string, customerGroup?: string): Promise<void> {
+        let existing: { gstin?: string; gst_category?: string; customer_group?: string } | null = null
         try {
-            const existing = await this.getDoc<{ gstin?: string; gst_category?: string; customer_group?: string }>(
+            existing = await this.getDoc<{ gstin?: string; gst_category?: string; customer_group?: string }>(
                 'Customer',
                 name,
             )
-            const updates: Record<string, unknown> = {}
-            if (gstin && !existing.gstin) {
-                updates.gstin = gstin
-                updates.gst_category = 'Registered Regular'
-            }
-            if (
-                customerGroup &&
-                existing.customer_group === 'All Customer Groups' &&
-                customerGroup !== 'All Customer Groups'
-            ) {
-                updates.customer_group = customerGroup
-            }
-            if (Object.keys(updates).length > 0) {
-                await this.updateDoc('Customer', name, updates)
-                logger.info({ name, ...updates }, 'Updated Customer in ERPNext')
-            }
         } catch (err) {
             if (err instanceof ERPNextError && err.status === 404) {
                 await this.createDoc('Customer', {
@@ -167,33 +176,40 @@ export class ERPNextClient {
                     gst_category: gstin ? 'Registered Regular' : 'Unregistered',
                 })
                 logger.info({ name }, 'Auto-created Customer in ERPNext')
+                return
+            }
+            throw err
+        }
+        const updates: Record<string, unknown> = {}
+        if (gstin && !existing.gstin) {
+            updates.gstin = gstin
+            updates.gst_category = 'Registered Regular'
+        }
+        if (
+            customerGroup &&
+            existing.customer_group === 'All Customer Groups' &&
+            customerGroup !== 'All Customer Groups'
+        ) {
+            updates.customer_group = customerGroup
+        }
+        if (Object.keys(updates).length > 0) {
+            try {
+                await this.updateDoc('Customer', name, updates)
+                logger.info({ name, ...updates }, 'Updated Customer in ERPNext')
+            } catch (err) {
+                logger.warn({ name, updates, err }, 'Customer update failed — continuing with existing data')
             }
         }
     }
 
     /** Ensure a Supplier exists in ERPNext with correct GSTIN; create or update if needed. */
     async ensureSupplier(name: string, gstin?: string, supplierGroup?: string): Promise<void> {
+        let existing: { gstin?: string; gst_category?: string; supplier_group?: string } | null = null
         try {
-            const existing = await this.getDoc<{ gstin?: string; gst_category?: string; supplier_group?: string }>(
+            existing = await this.getDoc<{ gstin?: string; gst_category?: string; supplier_group?: string }>(
                 'Supplier',
                 name,
             )
-            const updates: Record<string, unknown> = {}
-            if (gstin && !existing.gstin) {
-                updates.gstin = gstin
-                updates.gst_category = 'Registered Regular'
-            }
-            if (
-                supplierGroup &&
-                existing.supplier_group === 'All Supplier Groups' &&
-                supplierGroup !== 'All Supplier Groups'
-            ) {
-                updates.supplier_group = supplierGroup
-            }
-            if (Object.keys(updates).length > 0) {
-                await this.updateDoc('Supplier', name, updates)
-                logger.info({ name, ...updates }, 'Updated Supplier in ERPNext')
-            }
         } catch (err) {
             if (err instanceof ERPNextError && err.status === 404) {
                 await this.createDoc('Supplier', {
@@ -205,6 +221,66 @@ export class ERPNextClient {
                     gst_category: gstin ? 'Registered Regular' : 'Unregistered',
                 })
                 logger.info({ name }, 'Auto-created Supplier in ERPNext')
+                return
+            }
+            throw err
+        }
+        const updates: Record<string, unknown> = {}
+        if (gstin && !existing.gstin) {
+            updates.gstin = gstin
+            updates.gst_category = 'Registered Regular'
+        }
+        if (
+            supplierGroup &&
+            existing.supplier_group === 'All Supplier Groups' &&
+            supplierGroup !== 'All Supplier Groups'
+        ) {
+            updates.supplier_group = supplierGroup
+        }
+        if (Object.keys(updates).length > 0) {
+            try {
+                await this.updateDoc('Supplier', name, updates)
+                logger.info({ name, ...updates }, 'Updated Supplier in ERPNext')
+            } catch (err) {
+                logger.warn({ name, updates, err }, 'Supplier update failed — continuing with existing data')
+            }
+        }
+    }
+
+    /** Ensure a UOM exists in ERPNext; create if missing. */
+    async ensureUOM(uom: string): Promise<void> {
+        if (!uom || uom === 'Nos') return // 'Nos' always exists
+        try {
+            await this.getDoc('UOM', uom)
+        } catch (err) {
+            if (err instanceof ERPNextError && err.status === 404) {
+                try {
+                    await this.createDoc('UOM', { uom_name: uom, enabled: 1 })
+                    logger.info({ uom }, 'Auto-created UOM in ERPNext')
+                } catch (createErr) {
+                    logger.warn({ uom, err: createErr }, 'Could not create UOM — will fall back to Nos')
+                }
+            }
+        }
+    }
+
+    /** Ensure an Item Group exists in ERPNext under 'All Item Groups'; create if missing. */
+    async ensureItemGroup(groupName: string): Promise<void> {
+        if (!groupName || groupName === 'All Item Groups') return
+        try {
+            await this.getDoc('Item Group', groupName)
+        } catch (err) {
+            if (err instanceof ERPNextError && err.status === 404) {
+                try {
+                    await this.createDoc('Item Group', {
+                        item_group_name: groupName,
+                        parent_item_group: 'All Item Groups',
+                        is_group: 0,
+                    })
+                    logger.info({ groupName }, 'Auto-created Item Group in ERPNext')
+                } catch (createErr) {
+                    logger.warn({ groupName, err: createErr }, 'Could not create Item Group — will fall back to All Item Groups')
+                }
             }
         }
     }
@@ -227,15 +303,43 @@ export class ERPNextClient {
             }
         } catch (err) {
             if (err instanceof ERPNextError && err.status === 404) {
-                await this.createDoc('Item', {
+                // Try with specific group/UOM; if that fails (group or UOM doesn't exist in ERPNext),
+                // retry with safe defaults so the item always gets created.
+                const baseDoc = {
                     doctype: 'Item',
                     item_code: itemCode,
                     item_name: itemCode,
-                    item_group: itemGroup || 'All Item Groups',
-                    stock_uom: uom || 'Nos',
                     is_stock_item: 1,
-                    gst_hsn_code: hsnCode || '999111', // fallback SAC — India Compliance requires 6+ digit HSN
-                })
+                    gst_hsn_code: hsnCode || '999111',
+                }
+                try {
+                    await this.createDoc('Item', {
+                        ...baseDoc,
+                        item_group: itemGroup || 'All Item Groups',
+                        stock_uom: uom || 'Nos',
+                    })
+                } catch {
+                    // Fallback: safe defaults — also reset HSN in case original was invalid in India Compliance
+                    await this.createDoc('Item', {
+                        ...baseDoc,
+                        gst_hsn_code: '999111',
+                        item_group: 'All Item Groups',
+                        stock_uom: 'Nos',
+                    })
+                }
+                // Pre-create item prices so India Compliance doesn't throw on first SI/PI submit
+                for (const priceList of ['Standard Selling', 'Standard Buying']) {
+                    try {
+                        await this.createDoc('Item Price', {
+                            item_code: itemCode,
+                            price_list: priceList,
+                            price_list_rate: 0,
+                            uom: uom || 'Nos',
+                        })
+                    } catch {
+                        /* ignore — price may already exist */
+                    }
+                }
                 logger.info({ itemCode }, 'Auto-created Item in ERPNext')
             }
         }
@@ -418,6 +522,188 @@ export class ERPNextClient {
         if (!res.ok) return 0
         const json = (await res.json()) as { message?: number }
         return json.message ?? 0
+    }
+
+    /**
+     * Ensure a Bank GL Account exists under "Bank Accounts - {abbr}" in ERPNext's Chart of Accounts.
+     * Used when syncing Tally bank/cash ledgers to ERPNext as proper GL accounts.
+     * Returns the ERPNext account name (e.g. "HDFC Bank - CPT").
+     */
+    async ensureBankGLAccount(ledgerName: string, company: string, abbr: string): Promise<string> {
+        const erpAccountName = `${ledgerName} - ${abbr}`
+        try {
+            await this.getDoc('Account', erpAccountName)
+            return erpAccountName // already exists
+        } catch (err) {
+            if (!(err instanceof ERPNextError) || err.status !== 404) throw err
+        }
+
+        // Lookup actual Bank Accounts parent from ERPNext COA (may have a numeric prefix like "1200 - Bank Accounts - CPT")
+        let parentAccount = `Bank Accounts - ${abbr}`
+        try {
+            const parents = await this.listDocs<{ name: string }>(
+                'Account',
+                [
+                    ['is_group', '=', 1],
+                    ['account_type', '=', 'Bank'],
+                    ['company', '=', company],
+                ],
+                ['name'],
+                undefined,
+                1,
+            )
+            if (parents[0]?.name) parentAccount = parents[0].name
+        } catch {
+            /* fallback to default naming */
+        }
+        await this.createDoc('Account', {
+            doctype: 'Account',
+            account_name: ledgerName,
+            parent_account: parentAccount,
+            account_type: 'Bank',
+            company,
+        })
+        logger.info({ ledgerName, erpAccountName }, 'Auto-created Bank GL Account in ERPNext')
+        return erpAccountName
+    }
+
+    /**
+     * Ensure a generic GL Account exists in ERPNext's Chart of Accounts.
+     * Classifies by ledger name keywords: bank/FD → Bank, income/interest → Indirect Income,
+     * everything else → Indirect Expenses.
+     * Returns the ERPNext account name (e.g. "Interest Income - CPT").
+     */
+    async ensureGLAccount(ledgerName: string, company: string, abbr: string): Promise<string> {
+        const erpAccountName = `${ledgerName} - ${abbr}`
+        try {
+            await this.getDoc('Account', erpAccountName)
+            return erpAccountName // already exists
+        } catch (err) {
+            if (!(err instanceof ERPNextError) || err.status !== 404) throw err
+        }
+
+        const nameL = ledgerName.toLowerCase()
+        let accountType = ''
+        let parentAccount: string
+
+        if (/bank|fd\b|fixed.?deposit/.test(nameL)) {
+            accountType = 'Bank'
+            try {
+                const parents = await this.listDocs<{ name: string }>(
+                    'Account',
+                    [['is_group', '=', 1], ['account_type', '=', 'Bank'], ['company', '=', company]],
+                    ['name'], undefined, 1,
+                )
+                parentAccount = parents[0]?.name ?? `Bank Accounts - ${abbr}`
+            } catch {
+                parentAccount = `Bank Accounts - ${abbr}`
+            }
+        } else if (/income|revenue|interest|dividend/.test(nameL)) {
+            accountType = 'Income Account'
+            parentAccount = `Indirect Income - ${abbr}`
+        } else {
+            parentAccount = `Indirect Expenses - ${abbr}`
+        }
+
+        try {
+            await this.createDoc('Account', {
+                doctype: 'Account',
+                account_name: ledgerName,
+                parent_account: parentAccount,
+                account_type: accountType || undefined,
+                company,
+            })
+        } catch {
+            // Parent may not exist — try the other common root name format
+            const fallbackParent = accountType === 'Income Account'
+                ? `Indirect Income - ${abbr}`
+                : `Indirect Expenses - ${abbr}`
+            await this.createDoc('Account', {
+                doctype: 'Account',
+                account_name: ledgerName,
+                parent_account: fallbackParent,
+                company,
+            })
+        }
+        logger.info({ ledgerName, erpAccountName }, 'Auto-created GL Account in ERPNext')
+        return erpAccountName
+    }
+
+    /**
+     * Create a one-time opening stock reconciliation in ERPNext for all Tally stock items
+     * that have opening balances. Uses Stock Reconciliation (purpose=Opening Stock).
+     * Idempotent: skips if a Stock Reconciliation with remarks "__OPENING_STOCK__" already exists.
+     */
+    async ensureOpeningStockEntry(
+        items: Array<{ itemCode: string; qty: number; rate: number; uom?: string }>,
+        company: string,
+        warehouse: string,
+        postingDate: string,
+        _costCenter?: string,
+    ): Promise<void> {
+        // Check if opening stock reconciliation already exists for this company
+        const existing = await this.listDocs<{ name: string }>(
+            'Stock Reconciliation',
+            [['purpose', '=', 'Opening Stock'], ['company', '=', company], ['docstatus', '=', 1]],
+            ['name'],
+            undefined,
+            1,
+        )
+        if (existing.length > 0) {
+            logger.info({ name: existing[0].name }, 'Opening stock reconciliation already exists — skipping')
+            return
+        }
+
+        // Find Temporary Opening account for the difference account
+        const tempAccounts = await this.listDocs<{ name: string }>(
+            'Account',
+            [['account_type', '=', 'Temporary'], ['company', '=', company]],
+            ['name'],
+            undefined,
+            1,
+        )
+        const expenseAccount = tempAccounts[0]?.name
+        if (!expenseAccount) {
+            logger.warn({ company }, 'No Temporary Opening account found — skipping opening stock')
+            return
+        }
+
+        // ERPNext requires valuation_rate > 0 for Opening Stock — skip 0-rate items
+        const zeroRateItems = items.filter((i) => i.qty > 0 && !i.rate)
+        if (zeroRateItems.length > 0) {
+            logger.warn(
+                { count: zeroRateItems.length, items: zeroRateItems.map((i) => i.itemCode) },
+                'Skipping opening stock items with no valuation rate — resync connector after Tally returns opening values',
+            )
+        }
+        const reconItems = items
+            .filter((i) => i.qty > 0 && i.rate > 0)
+            .map((i) => ({
+                item_code: i.itemCode,
+                warehouse,
+                qty: i.qty,
+                valuation_rate: i.rate,
+            }))
+
+        if (reconItems.length === 0) {
+            logger.warn({ warehouse }, 'No items with valid valuation rate — opening stock reconciliation skipped')
+            return
+        }
+
+        try {
+            const created = await this.createDoc<{ name: string }>('Stock Reconciliation', {
+                purpose: 'Opening Stock',
+                posting_date: postingDate,
+                company,
+                expense_account: expenseAccount,
+                items: reconItems,
+                custom_sync_source: 'TALLYBRIDGE',
+            })
+            await this.submitDoc('Stock Reconciliation', created.name)
+            logger.info({ name: created.name, itemCount: reconItems.length }, 'Opening stock reconciliation created')
+        } catch (err) {
+            logger.warn({ err }, 'Failed to create opening stock reconciliation — stock may go negative on first sync')
+        }
     }
 
     async patchSyncStatus(doctype: string, name: string, status: 'Synced' | 'Pending' | 'Error'): Promise<void> {

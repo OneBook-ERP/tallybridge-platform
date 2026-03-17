@@ -19,7 +19,7 @@ export interface GSTLedgerMapping {
 
 export interface VoucherTypeMapping {
     [tallyVoucherType: string]: {
-        erpnextDoctype: 'Sales Invoice' | 'Purchase Invoice' | 'Payment Entry' | 'Journal Entry'
+        erpnextDoctype: 'Sales Invoice' | 'Purchase Invoice' | 'Payment Entry' | 'Journal Entry' | 'Stock Entry'
         isReturn?: boolean
         paymentType?: 'Pay' | 'Receive' | 'Internal Transfer'
         journalType?: string
@@ -41,8 +41,10 @@ export interface CompanyConfig {
     companyAddress?: string // ERPNext Address name (e.g. "Covai Polymer Traders-Billing") — resolved dynamically
     defaultState?: string // Fallback state when GSTIN is not set (e.g. "Tamil Nadu")
     currency: string // "INR"
-    defaultWarehouse?: string // e.g. "Stores - CPT" — used for update_stock on invoices
+    defaultWarehouse?: string // e.g. "Stores - CPT" — enables update_stock on Sales/Purchase Invoices
+    updateStock?: boolean // if true (default), set update_stock=1 on inventory invoices
     costCenter?: string // e.g. "Main - AC"
+    bankLedgers?: string[] // Tally ledger names classified as Bank/Cash — prevents party fallback in resolver
     accountMappings: AccountMapping
     gstLedgerMappings: GSTLedgerMapping
     voucherTypeMappings: VoucherTypeMapping
@@ -75,6 +77,8 @@ export type TransformErrorCode =
     | 'MISSING_PAN' // Tier 2
     | 'CURRENCY_NOT_FOUND' // Tier 3
     | 'TRANSFORM_FAILED' // Unexpected — engineering review
+    | 'FALLBACK_TO_JOURNAL' // Payment routed to Journal Entry (bank-to-bank)
+    | 'IGNORED_VOUCHER' // Voucher type intentionally not synced (HR, payroll, non-accounting)
 
 // ── Sync record (from sync_records table) ─────────────────────────────────────
 

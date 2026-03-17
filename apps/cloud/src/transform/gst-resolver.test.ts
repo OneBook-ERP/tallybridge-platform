@@ -67,8 +67,8 @@ describe('resolveGST', () => {
         const sgstLine = result.taxLines.find((t) => t.account_head === 'Output Tax SGST - TC')
         expect(cgstLine).toBeDefined()
         expect(sgstLine).toBeDefined()
-        expect(cgstLine!.tax_amount).toBe(900)
-        expect(sgstLine!.tax_amount).toBe(900)
+        expect(cgstLine!.tax_amount).toBe(2947.5)
+        expect(sgstLine!.tax_amount).toBe(2947.5)
     })
 
     it('derives rate from ledger name percentage pattern', () => {
