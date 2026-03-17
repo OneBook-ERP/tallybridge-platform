@@ -81,7 +81,10 @@ export function transformJournal(voucher: TallyVoucher, config: CompanyConfig): 
         return {
             success: false,
             error: allIgnored
-                ? { code: 'IGNORED_VOUCHER', message: 'All ledger entries are mapped to __IGNORE__ — voucher intentionally skipped' }
+                ? {
+                      code: 'IGNORED_VOUCHER',
+                      message: 'All ledger entries are mapped to __IGNORE__ — voucher intentionally skipped',
+                  }
                 : { code: 'TRANSFORM_FAILED', message: 'Journal has no valid ledger entries after filtering' },
         }
     }
@@ -98,20 +101,24 @@ export function transformJournal(voucher: TallyVoucher, config: CompanyConfig): 
         if (absDiff <= 5) {
             if (diff > 0) {
                 const lastCredit = [...accounts].reverse().find((a) => a.credit_in_account_currency > 0)
-                if (lastCredit) lastCredit.credit_in_account_currency = roundInr(lastCredit.credit_in_account_currency + diff)
+                if (lastCredit)
+                    lastCredit.credit_in_account_currency = roundInr(lastCredit.credit_in_account_currency + diff)
             } else {
                 const lastDebit = [...accounts].reverse().find((a) => a.debit_in_account_currency > 0)
-                if (lastDebit) lastDebit.debit_in_account_currency = roundInr(lastDebit.debit_in_account_currency - diff)
+                if (lastDebit)
+                    lastDebit.debit_in_account_currency = roundInr(lastDebit.debit_in_account_currency - diff)
             }
             warnings.push(`Auto-balanced journal: adjusted ₹${absDiff} rounding difference`)
         } else {
             // Larger imbalance — adjust last entry and warn (data quality issue in Tally)
             if (diff > 0) {
                 const lastCredit = [...accounts].reverse().find((a) => a.credit_in_account_currency > 0)
-                if (lastCredit) lastCredit.credit_in_account_currency = roundInr(lastCredit.credit_in_account_currency + diff)
+                if (lastCredit)
+                    lastCredit.credit_in_account_currency = roundInr(lastCredit.credit_in_account_currency + diff)
             } else {
                 const lastDebit = [...accounts].reverse().find((a) => a.debit_in_account_currency > 0)
-                if (lastDebit) lastDebit.debit_in_account_currency = roundInr(lastDebit.debit_in_account_currency - diff)
+                if (lastDebit)
+                    lastDebit.debit_in_account_currency = roundInr(lastDebit.debit_in_account_currency - diff)
             }
             warnings.push(`Large journal imbalance of ₹${absDiff} force-balanced — review Tally source data`)
         }

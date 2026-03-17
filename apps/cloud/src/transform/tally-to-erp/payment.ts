@@ -7,7 +7,14 @@
  * Bank allocations → reference_no, reference_date
  * Bill allocations (Agst Ref) → Payment References linked to invoices
  */
-import type { TallyVoucher, CompanyConfig, ERPNextPaymentEntry, PaymentReference, AdvancePaymentEntry, TransformResult } from '../../types'
+import type {
+    TallyVoucher,
+    CompanyConfig,
+    ERPNextPaymentEntry,
+    PaymentReference,
+    AdvancePaymentEntry,
+    TransformResult,
+} from '../../types'
 import { resolveAccount, isTransformError } from '../account-resolver'
 import { tallyDateToErp, absAmount, roundInr, sanitiseName, isRoundOff } from '../utils'
 
@@ -112,8 +119,7 @@ export function transformPayment(voucher: TallyVoucher, config: CompanyConfig): 
     // When Advance bill allocations are present and this is a "Pay" type,
     // override paid_to to point at the advance ledger account (party's payable).
     // For On Account payments (no prior invoice), references will be empty — unallocated.
-    const effectivePaymentType =
-        advanceEntries.length > 0 && !isReceipt ? 'Pay' : paymentType
+    const effectivePaymentType = advanceEntries.length > 0 && !isReceipt ? 'Pay' : paymentType
 
     const partyName = sanitiseName(partyEntry.ledgerName || voucher.partyLedgerName || 'Unknown Party')
 

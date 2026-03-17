@@ -10,7 +10,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const { mockSql, mockProcessTallyVoucher, mockBroadcaster } = vi.hoisted(() => {
-    const mockSql = Object.assign(vi.fn(() => Promise.resolve([])), { json: (v: unknown) => v })
+    const mockSql = Object.assign(
+        vi.fn(() => Promise.resolve([])),
+        { json: (v: unknown) => v },
+    )
     const mockProcessTallyVoucher = vi.fn(() => Promise.resolve({ status: 'synced' }))
     const mockBroadcaster = { emit: vi.fn() }
     return { mockSql, mockProcessTallyVoucher, mockBroadcaster }
@@ -37,7 +40,9 @@ vi.mock('bullmq', () => {
                 if (queueName === 'sync-jobs') capturedSyncProcessor = processor
                 if (queueName === 'tally-write') capturedTallyWriteProcessor = processor
             }
-            on() { return this }
+            on() {
+                return this
+            }
         },
     }
 })
@@ -78,7 +83,14 @@ const CID = '00000000-0000-0000-0000-000000000001'
 // Mirrors real config_profiles row from PostgreSQL
 const configRow = {
     account_mappings: { 'B2B SALES': '4110 - Sales - CPT', 'HDFC BANK': '1220 - HDFC Bank - CPT' },
-    gst_ledger_mappings: { output_cgst: 'Output Tax CGST - CPT', output_sgst: 'Output Tax SGST - CPT', output_igst: 'Output Tax IGST - CPT', input_cgst: 'Input Tax CGST - CPT', input_sgst: 'Input Tax SGST - CPT', input_igst: 'Input Tax IGST - CPT' },
+    gst_ledger_mappings: {
+        output_cgst: 'Output Tax CGST - CPT',
+        output_sgst: 'Output Tax SGST - CPT',
+        output_igst: 'Output Tax IGST - CPT',
+        input_cgst: 'Input Tax CGST - CPT',
+        input_sgst: 'Input Tax SGST - CPT',
+        input_igst: 'Input Tax IGST - CPT',
+    },
     voucher_type_mappings: {},
     conflict_strategy: { default: 'TALLY_WINS' },
     sync_direction_rules: {},
@@ -139,7 +151,16 @@ describe('sync-jobs processor', () => {
             data: {
                 companyId: CID,
                 recordType: 'ledger',
-                records: [{ Name: 'HDFC BANK', Group: 'Bank Accounts', Parent: 'Bank Accounts', GUID: 'abc-123', OpeningBalance: 150000, PartyGSTIN: '' }],
+                records: [
+                    {
+                        Name: 'HDFC BANK',
+                        Group: 'Bank Accounts',
+                        Parent: 'Bank Accounts',
+                        GUID: 'abc-123',
+                        OpeningBalance: 150000,
+                        PartyGSTIN: '',
+                    },
+                ],
             },
         })
         const queries = mockSql.mock.calls.map((c) => c[0].join('?'))
@@ -152,7 +173,17 @@ describe('sync-jobs processor', () => {
             data: {
                 companyId: CID,
                 recordType: 'stockItem',
-                records: [{ Name: 'HDPE GRANULES', Parent: 'Primary', BaseUnits: 'KGS', GUID: 'si-001', HSNCode: '999111', OpeningBalance: 500, OpeningValue: -32500 }],
+                records: [
+                    {
+                        Name: 'HDPE GRANULES',
+                        Parent: 'Primary',
+                        BaseUnits: 'KGS',
+                        GUID: 'si-001',
+                        HSNCode: '999111',
+                        OpeningBalance: 500,
+                        OpeningValue: -32500,
+                    },
+                ],
             },
         })
         const queries = mockSql.mock.calls.map((c) => c[0].join('?'))
@@ -166,8 +197,26 @@ describe('sync-jobs processor', () => {
                 companyId: CID,
                 recordType: 'voucher',
                 records: [
-                    { guid: '3b4a4714-7fa1-4344-a9cf-97e8d4168385-00002cf6', voucherTypeName: 'Sales', date: '2023-06-20T00:00:00Z', voucherNumber: '175', partyLedgerName: 'ANU POLYMERS', isInvoice: true, ledgerEntries: [], inventoryEntries: [] },
-                    { guid: '3b4a4714-7fa1-4344-a9cf-97e8d4168385-00002b69', voucherTypeName: 'Purchase', date: '2023-05-09T00:00:00Z', voucherNumber: '26', partyLedgerName: 'SERVO PACKAGING LIMITED', isInvoice: true, ledgerEntries: [], inventoryEntries: [] },
+                    {
+                        guid: '3b4a4714-7fa1-4344-a9cf-97e8d4168385-00002cf6',
+                        voucherTypeName: 'Sales',
+                        date: '2023-06-20T00:00:00Z',
+                        voucherNumber: '175',
+                        partyLedgerName: 'ANU POLYMERS',
+                        isInvoice: true,
+                        ledgerEntries: [],
+                        inventoryEntries: [],
+                    },
+                    {
+                        guid: '3b4a4714-7fa1-4344-a9cf-97e8d4168385-00002b69',
+                        voucherTypeName: 'Purchase',
+                        date: '2023-05-09T00:00:00Z',
+                        voucherNumber: '26',
+                        partyLedgerName: 'SERVO PACKAGING LIMITED',
+                        isInvoice: true,
+                        ledgerEntries: [],
+                        inventoryEntries: [],
+                    },
                 ],
             },
         })
@@ -179,7 +228,18 @@ describe('sync-jobs processor', () => {
             data: {
                 companyId: CID,
                 recordType: 'voucher',
-                records: [{ guid: '3b4a4714-7fa1-4344-a9cf-97e8d4168385-00002cf6', voucherTypeName: 'Sales', date: '2023-06-20T00:00:00Z', voucherNumber: '175', partyLedgerName: 'ANU POLYMERS', isInvoice: true, ledgerEntries: [], inventoryEntries: [] }],
+                records: [
+                    {
+                        guid: '3b4a4714-7fa1-4344-a9cf-97e8d4168385-00002cf6',
+                        voucherTypeName: 'Sales',
+                        date: '2023-06-20T00:00:00Z',
+                        voucherNumber: '175',
+                        partyLedgerName: 'ANU POLYMERS',
+                        isInvoice: true,
+                        ledgerEntries: [],
+                        inventoryEntries: [],
+                    },
+                ],
             },
         })
         expect(mockBroadcaster.emit).toHaveBeenCalledWith(
@@ -195,7 +255,14 @@ describe('sync-jobs processor', () => {
             data: {
                 companyId: CID,
                 recordType: 'ledger',
-                records: [{ Name: 'ANU POLYMERS', Group: 'Sundry Debtors', Parent: 'Sundry Debtors', GSTIN: '33AAUFA2081K1Z9' }],
+                records: [
+                    {
+                        Name: 'ANU POLYMERS',
+                        Group: 'Sundry Debtors',
+                        Parent: 'Sundry Debtors',
+                        GSTIN: '33AAUFA2081K1Z9',
+                    },
+                ],
             },
         })
         expect(mockEnsureCustomer).toHaveBeenCalledWith('ANU POLYMERS', '33AAUFA2081K1Z9', 'Sundry Debtors')
@@ -207,10 +274,21 @@ describe('sync-jobs processor', () => {
             data: {
                 companyId: CID,
                 recordType: 'ledger',
-                records: [{ Name: 'SERVO PACKAGING LIMITED', Group: 'Sundry Creditors', Parent: 'Sundry Creditors', GSTIN: '27AAHCS6789E1ZA' }],
+                records: [
+                    {
+                        Name: 'SERVO PACKAGING LIMITED',
+                        Group: 'Sundry Creditors',
+                        Parent: 'Sundry Creditors',
+                        GSTIN: '27AAHCS6789E1ZA',
+                    },
+                ],
             },
         })
-        expect(mockEnsureSupplier).toHaveBeenCalledWith('SERVO PACKAGING LIMITED', '27AAHCS6789E1ZA', 'Sundry Creditors')
+        expect(mockEnsureSupplier).toHaveBeenCalledWith(
+            'SERVO PACKAGING LIMITED',
+            '27AAHCS6789E1ZA',
+            'Sundry Creditors',
+        )
     })
 
     it('classifyLedger: Bank Account → Bank, persists mapping', async () => {
@@ -219,7 +297,15 @@ describe('sync-jobs processor', () => {
             data: {
                 companyId: CID,
                 recordType: 'ledger',
-                records: [{ Name: 'HDFC BANK', Group: 'Bank Accounts', Parent: 'Bank Accounts', BankAccountNumber: '50200012345678', IFSCode: 'HDFC0001234' }],
+                records: [
+                    {
+                        Name: 'HDFC BANK',
+                        Group: 'Bank Accounts',
+                        Parent: 'Bank Accounts',
+                        BankAccountNumber: '50200012345678',
+                        IFSCode: 'HDFC0001234',
+                    },
+                ],
             },
         })
         expect(mockEnsureBankGLAccount).toHaveBeenCalledWith('HDFC BANK', 'Covai Polymer Traders', 'CPT')
@@ -234,7 +320,16 @@ describe('sync-jobs processor', () => {
             data: {
                 companyId: CID,
                 recordType: 'stockItem',
-                records: [{ Name: 'FILLER', Parent: 'Primary', BaseUnits: 'KGS', HSNCode: '999111', OpeningBalance: 1000, OpeningValue: -35000 }],
+                records: [
+                    {
+                        Name: 'FILLER',
+                        Parent: 'Primary',
+                        BaseUnits: 'KGS',
+                        HSNCode: '999111',
+                        OpeningBalance: 1000,
+                        OpeningValue: -35000,
+                    },
+                ],
             },
         })
         const queries = mockSql.mock.calls.map((c) => c[0].join('?'))
@@ -316,9 +411,36 @@ describe('sync-jobs processor', () => {
                 recordType: 'voucher',
                 records: [
                     // Deliberately out of order: Payment, Sales, Purchase
-                    { guid: 'g3', voucherTypeName: 'Payment', date: '2023-06-20T00:00:00Z', voucherNumber: '1', partyLedgerName: 'HDFC BANK', isInvoice: false, ledgerEntries: [], inventoryEntries: [] },
-                    { guid: 'g1', voucherTypeName: 'Sales', date: '2023-06-20T00:00:00Z', voucherNumber: '175', partyLedgerName: 'ANU POLYMERS', isInvoice: true, ledgerEntries: [], inventoryEntries: [] },
-                    { guid: 'g2', voucherTypeName: 'Purchase', date: '2023-05-09T00:00:00Z', voucherNumber: '26', partyLedgerName: 'SERVO PACKAGING LIMITED', isInvoice: true, ledgerEntries: [], inventoryEntries: [] },
+                    {
+                        guid: 'g3',
+                        voucherTypeName: 'Payment',
+                        date: '2023-06-20T00:00:00Z',
+                        voucherNumber: '1',
+                        partyLedgerName: 'HDFC BANK',
+                        isInvoice: false,
+                        ledgerEntries: [],
+                        inventoryEntries: [],
+                    },
+                    {
+                        guid: 'g1',
+                        voucherTypeName: 'Sales',
+                        date: '2023-06-20T00:00:00Z',
+                        voucherNumber: '175',
+                        partyLedgerName: 'ANU POLYMERS',
+                        isInvoice: true,
+                        ledgerEntries: [],
+                        inventoryEntries: [],
+                    },
+                    {
+                        guid: 'g2',
+                        voucherTypeName: 'Purchase',
+                        date: '2023-05-09T00:00:00Z',
+                        voucherNumber: '26',
+                        partyLedgerName: 'SERVO PACKAGING LIMITED',
+                        isInvoice: true,
+                        ledgerEntries: [],
+                        inventoryEntries: [],
+                    },
                 ],
             },
         })
@@ -346,7 +468,16 @@ describe('sync-jobs processor', () => {
             data: {
                 companyId: CID,
                 recordType: 'stockItem',
-                records: [{ Name: 'HDPE GRANULES', Parent: 'Primary', BaseUnits: 'KGS', HSNCode: '999111', OpeningBalance: 500, OpeningValue: -32500 }],
+                records: [
+                    {
+                        Name: 'HDPE GRANULES',
+                        Parent: 'Primary',
+                        BaseUnits: 'KGS',
+                        HSNCode: '999111',
+                        OpeningBalance: 500,
+                        OpeningValue: -32500,
+                    },
+                ],
             },
         })
 
@@ -367,7 +498,16 @@ describe('sync-jobs processor', () => {
             data: {
                 companyId: CID,
                 recordType: 'stockItem',
-                records: [{ Name: 'HDPE GRANULES', Parent: 'Primary', BaseUnits: 'KGS', HSNCode: '999111', OpeningBalance: 0, OpeningValue: 0 }],
+                records: [
+                    {
+                        Name: 'HDPE GRANULES',
+                        Parent: 'Primary',
+                        BaseUnits: 'KGS',
+                        HSNCode: '999111',
+                        OpeningBalance: 0,
+                        OpeningValue: 0,
+                    },
+                ],
             },
         })
         expect(mockEnsureUOM).toHaveBeenCalledWith('KGS')
@@ -384,8 +524,26 @@ describe('sync-jobs processor', () => {
                 companyId: CID,
                 recordType: 'voucher',
                 records: [
-                    { guid: 'g1', voucherTypeName: 'Sales', date: '2023-06-20T00:00:00Z', voucherNumber: '175', partyLedgerName: 'ANU POLYMERS', isInvoice: true, ledgerEntries: [], inventoryEntries: [] },
-                    { guid: 'g2', voucherTypeName: 'Sales', date: '2023-06-20T00:00:00Z', voucherNumber: '176', partyLedgerName: 'PROGREEN', isInvoice: true, ledgerEntries: [], inventoryEntries: [] },
+                    {
+                        guid: 'g1',
+                        voucherTypeName: 'Sales',
+                        date: '2023-06-20T00:00:00Z',
+                        voucherNumber: '175',
+                        partyLedgerName: 'ANU POLYMERS',
+                        isInvoice: true,
+                        ledgerEntries: [],
+                        inventoryEntries: [],
+                    },
+                    {
+                        guid: 'g2',
+                        voucherTypeName: 'Sales',
+                        date: '2023-06-20T00:00:00Z',
+                        voucherNumber: '176',
+                        partyLedgerName: 'PROGREEN',
+                        isInvoice: true,
+                        ledgerEntries: [],
+                        inventoryEntries: [],
+                    },
                 ],
             },
         })

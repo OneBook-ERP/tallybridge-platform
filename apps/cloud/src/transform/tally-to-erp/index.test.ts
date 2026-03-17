@@ -15,7 +15,7 @@ describe('transformVoucher router', () => {
         accountMappings: {
             ...makeConfig().accountMappings,
             'OFFICE RENT': '5209 - Office Rent - TC',
-            'PURCHASES': '1410 - Stock In Hand - TC',
+            PURCHASES: '1410 - Stock In Hand - TC',
         },
     })
 

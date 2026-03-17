@@ -91,7 +91,16 @@ describe('buildStockVoucherXML', () => {
     it('strips ERPNext ABBR suffix from warehouse → Tally godown name', () => {
         const entry = makeStockEntry({
             stock_entry_type: 'Material Issue',
-            items: [{ item_code: 'ITEM-A', qty: 10, uom: 'Nos', s_warehouse: 'Cold Storage - TC', basic_rate: 50, amount: 500 }],
+            items: [
+                {
+                    item_code: 'ITEM-A',
+                    qty: 10,
+                    uom: 'Nos',
+                    s_warehouse: 'Cold Storage - TC',
+                    basic_rate: 50,
+                    amount: 500,
+                },
+            ],
         })
         const result = buildStockVoucherXML(entry, config)
 
@@ -101,7 +110,9 @@ describe('buildStockVoucherXML', () => {
     it('Stores warehouse maps to Main Location godown', () => {
         const entry = makeStockEntry({
             stock_entry_type: 'Material Issue',
-            items: [{ item_code: 'ITEM-B', qty: 5, uom: 'Nos', s_warehouse: 'Stores - TC', basic_rate: 100, amount: 500 }],
+            items: [
+                { item_code: 'ITEM-B', qty: 5, uom: 'Nos', s_warehouse: 'Stores - TC', basic_rate: 100, amount: 500 },
+            ],
         })
         const result = buildStockVoucherXML(entry, config)
 
@@ -134,7 +145,9 @@ describe('buildStockVoucherXML', () => {
     it('Material Receipt adds stock-in-hand ledger entry (debit)', () => {
         const entry = makeStockEntry({
             stock_entry_type: 'Material Receipt',
-            items: [{ item_code: 'ITEM-X', qty: 10, uom: 'Nos', t_warehouse: 'Stores - TC', basic_rate: 50, amount: 500 }],
+            items: [
+                { item_code: 'ITEM-X', qty: 10, uom: 'Nos', t_warehouse: 'Stores - TC', basic_rate: 50, amount: 500 },
+            ],
         })
         const result = buildStockVoucherXML(entry, config)
 
@@ -146,7 +159,15 @@ describe('buildStockVoucherXML', () => {
         const entry = makeStockEntry({
             stock_entry_type: 'Material Transfer Entry',
             items: [
-                { item_code: 'ITEM-X', qty: 10, uom: 'Nos', s_warehouse: 'A - TC', t_warehouse: 'B - TC', basic_rate: 50, amount: 500 },
+                {
+                    item_code: 'ITEM-X',
+                    qty: 10,
+                    uom: 'Nos',
+                    s_warehouse: 'A - TC',
+                    t_warehouse: 'B - TC',
+                    basic_rate: 50,
+                    amount: 500,
+                },
             ],
         })
         const result = buildStockVoucherXML(entry, config)

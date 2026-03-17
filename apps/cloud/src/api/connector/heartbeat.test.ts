@@ -5,7 +5,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import Fastify, { type FastifyInstance } from 'fastify'
 
 const { mockSql, mockBroadcaster } = vi.hoisted(() => {
-    const mockSql = Object.assign(vi.fn(() => Promise.resolve([])), { json: (v: unknown) => v })
+    const mockSql = Object.assign(
+        vi.fn(() => Promise.resolve([])),
+        { json: (v: unknown) => v },
+    )
     const mockBroadcaster = { emit: vi.fn() }
     return { mockSql, mockBroadcaster }
 })

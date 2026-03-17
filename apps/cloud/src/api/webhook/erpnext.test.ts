@@ -10,7 +10,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import Fastify, { type FastifyInstance } from 'fastify'
 
 const { mockSql, mockEnqueueTallyWrite, mockGetDoc } = vi.hoisted(() => {
-    const mockSql = Object.assign(vi.fn(() => Promise.resolve([])), { json: (v: unknown) => v })
+    const mockSql = Object.assign(
+        vi.fn(() => Promise.resolve([])),
+        { json: (v: unknown) => v },
+    )
     const mockEnqueueTallyWrite = vi.fn(() => Promise.resolve())
     const mockGetDoc = vi.fn(() =>
         Promise.resolve({
@@ -153,7 +156,12 @@ describe('POST /webhook/erpnext', () => {
         const res = await app.inject({
             method: 'POST',
             url: '/webhook/erpnext',
-            payload: { doctype: 'Sales Invoice', name: 'SINV-001', event: 'on_submit', custom_sync_source: 'TALLYBRIDGE' },
+            payload: {
+                doctype: 'Sales Invoice',
+                name: 'SINV-001',
+                event: 'on_submit',
+                custom_sync_source: 'TALLYBRIDGE',
+            },
         })
         expect(JSON.parse(res.body).skipped).toBe(true)
         expect(JSON.parse(res.body).reason).toContain('loop guard')
@@ -272,9 +280,7 @@ describe('POST /webhook/erpnext', () => {
 
         expect(res.statusCode).toBe(200)
         expect(JSON.parse(res.body).action).toBe('CREATE')
-        expect(mockEnqueueTallyWrite).toHaveBeenCalledWith(
-            expect.objectContaining({ voucherType: 'Purchase Invoice' }),
-        )
+        expect(mockEnqueueTallyWrite).toHaveBeenCalledWith(expect.objectContaining({ voucherType: 'Purchase Invoice' }))
     })
 
     it('handles Payment Entry doctype', async () => {
@@ -293,8 +299,6 @@ describe('POST /webhook/erpnext', () => {
         })
 
         expect(res.statusCode).toBe(200)
-        expect(mockEnqueueTallyWrite).toHaveBeenCalledWith(
-            expect.objectContaining({ voucherType: 'Payment Entry' }),
-        )
+        expect(mockEnqueueTallyWrite).toHaveBeenCalledWith(expect.objectContaining({ voucherType: 'Payment Entry' }))
     })
 })

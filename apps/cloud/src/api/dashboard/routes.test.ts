@@ -5,7 +5,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import Fastify, { type FastifyInstance } from 'fastify'
 
 const { mockSql, mockErpClient } = vi.hoisted(() => {
-    const mockSql = Object.assign(vi.fn(() => Promise.resolve([])), { json: (v: unknown) => v })
+    const mockSql = Object.assign(
+        vi.fn(() => Promise.resolve([])),
+        { json: (v: unknown) => v },
+    )
     const mockErpClient = { countDocs: vi.fn(() => Promise.resolve(0)) }
     return { mockSql, mockErpClient }
 })
@@ -47,9 +50,7 @@ afterEach(() => app.close())
 
 describe('GET /dashboard/companies', () => {
     it('returns companies array', async () => {
-        mockSql.mockResolvedValueOnce([
-            { id: 'c1', tally_company_name: 'Demo Co', erpnext_company: 'Demo' },
-        ])
+        mockSql.mockResolvedValueOnce([{ id: 'c1', tally_company_name: 'Demo Co', erpnext_company: 'Demo' }])
 
         const res = await app.inject({ method: 'GET', url: '/dashboard/companies' })
 
@@ -73,10 +74,10 @@ describe('GET /dashboard/stats', () => {
     it('returns numeric stats', async () => {
         // Each query has a conditional sql fragment interpolation → 2 mock calls per query (fragment + main)
         mockSql
-            .mockResolvedValueOnce([])                                                           // fragment: sync_count WHERE
+            .mockResolvedValueOnce([]) // fragment: sync_count WHERE
             .mockResolvedValueOnce([{ synced: '42', errored: '3', pending: '5', conflicts: '1' }]) // main: sync_count
-            .mockResolvedValueOnce([])                                                           // fragment: exc_count WHERE
-            .mockResolvedValueOnce([{ open_exceptions: '7', total_exceptions: '10' }])           // main: exc_count
+            .mockResolvedValueOnce([]) // fragment: exc_count WHERE
+            .mockResolvedValueOnce([{ open_exceptions: '7', total_exceptions: '10' }]) // main: exc_count
 
         const res = await app.inject({ method: 'GET', url: '/dashboard/stats?companyId=c1' })
 
@@ -167,9 +168,7 @@ describe('GET /dashboard/audit-log', () => {
         // Conditional sql fragment → 2 calls: fragment first, then main query
         mockSql
             .mockResolvedValueOnce([]) // fragment
-            .mockResolvedValueOnce([
-                { id: 'a1', actor: 'system', event_type: 'SYNC', document_ref: 'SINV-001' },
-            ])
+            .mockResolvedValueOnce([{ id: 'a1', actor: 'system', event_type: 'SYNC', document_ref: 'SINV-001' }])
 
         const res = await app.inject({ method: 'GET', url: '/dashboard/audit-log' })
 
@@ -185,9 +184,7 @@ describe('GET /dashboard/audit-log', () => {
 describe('POST /dashboard/reprocess-exceptions', () => {
     it('resolves ERPNEXT_WRITE_FAILED exceptions', async () => {
         // openExceptions query
-        mockSql.mockResolvedValueOnce([
-            { id: 'e1', error_message: 'failed', document_ref: 'Voucher:guid-001' },
-        ])
+        mockSql.mockResolvedValueOnce([{ id: 'e1', error_message: 'failed', document_ref: 'Voucher:guid-001' }])
         // DELETE sync_records
         mockSql.mockResolvedValueOnce([])
         // UPDATE exception_register
@@ -279,9 +276,11 @@ describe('POST /dashboard/reprocess-exceptions — UNMAPPED_LEDGER', () => {
             { id: 'e1', error_message: 'Tally ledger "OFFICE RENT" has no mapping', document_ref: 'Voucher:guid-001' },
         ])
         // config_profiles query — mapping now exists
-        mockSql.mockResolvedValueOnce([{
-            account_mappings: { 'OFFICE RENT': '5209 - Office Rent - CPT', 'B2B SALES': '4110 - Sales - CPT' },
-        }])
+        mockSql.mockResolvedValueOnce([
+            {
+                account_mappings: { 'OFFICE RENT': '5209 - Office Rent - CPT', 'B2B SALES': '4110 - Sales - CPT' },
+            },
+        ])
         // UPDATE exception_register
         mockSql.mockResolvedValueOnce([{ id: 'e1' }])
 
@@ -299,12 +298,18 @@ describe('POST /dashboard/reprocess-exceptions — UNMAPPED_LEDGER', () => {
 
     it('does not resolve UNMAPPED_LEDGER when ledger still not mapped', async () => {
         mockSql.mockResolvedValueOnce([
-            { id: 'e1', error_message: 'Tally ledger "PACKING CHARGES" has no mapping', document_ref: 'Voucher:guid-002' },
+            {
+                id: 'e1',
+                error_message: 'Tally ledger "PACKING CHARGES" has no mapping',
+                document_ref: 'Voucher:guid-002',
+            },
         ])
         // config_profiles — PACKING CHARGES not in mappings
-        mockSql.mockResolvedValueOnce([{
-            account_mappings: { 'B2B SALES': '4110 - Sales - CPT' },
-        }])
+        mockSql.mockResolvedValueOnce([
+            {
+                account_mappings: { 'B2B SALES': '4110 - Sales - CPT' },
+            },
+        ])
 
         const res = await app.inject({
             method: 'POST',
@@ -331,7 +336,11 @@ describe('POST /dashboard/reprocess-exceptions — UNMAPPED_LEDGER', () => {
 
     it('resolves FALLBACK_TO_JOURNAL + deletes sync_records', async () => {
         mockSql.mockResolvedValueOnce([
-            { id: 'e1', error_message: 'Payment fallback', document_ref: 'Voucher:3b4a4714-7fa1-4344-a9cf-97e8d4168385-0000abcd' },
+            {
+                id: 'e1',
+                error_message: 'Payment fallback',
+                document_ref: 'Voucher:3b4a4714-7fa1-4344-a9cf-97e8d4168385-0000abcd',
+            },
         ])
         mockSql.mockResolvedValueOnce([]) // DELETE sync_records
         mockSql.mockResolvedValueOnce([{ id: 'e1' }]) // UPDATE resolved
@@ -352,18 +361,22 @@ describe('POST /dashboard/reprocess-exceptions — UNMAPPED_LEDGER', () => {
 describe('POST /dashboard/opening-balance', () => {
     it('generates opening balance JV', async () => {
         // Company row
-        mockSql.mockResolvedValueOnce([{
-            erpnext_company: 'Covai Polymer Traders',
-            erpnext_abbr: 'CPT',
-            erpnext_gstin: '33AABCZ2616B1ZV',
-            erpnext_url: 'https://tally.zenpivot.in',
-            erpnext_api_key: 'k',
-            erpnext_api_secret: 's',
-        }])
+        mockSql.mockResolvedValueOnce([
+            {
+                erpnext_company: 'Covai Polymer Traders',
+                erpnext_abbr: 'CPT',
+                erpnext_gstin: '33AABCZ2616B1ZV',
+                erpnext_url: 'https://tally.zenpivot.in',
+                erpnext_api_key: 'k',
+                erpnext_api_secret: 's',
+            },
+        ])
         // config_profiles
-        mockSql.mockResolvedValueOnce([{
-            account_mappings: { 'HDFC BANK': '1220 - HDFC Bank - CPT' },
-        }])
+        mockSql.mockResolvedValueOnce([
+            {
+                account_mappings: { 'HDFC BANK': '1220 - HDFC Bank - CPT' },
+            },
+        ])
 
         const res = await app.inject({
             method: 'POST',
@@ -409,13 +422,15 @@ describe('POST /dashboard/opening-balance', () => {
 describe('POST /dashboard/opening-stock', () => {
     it('creates opening stock entry from stock_item_masters', async () => {
         // Company row
-        mockSql.mockResolvedValueOnce([{
-            erpnext_company: 'Covai Polymer Traders',
-            erpnext_abbr: 'CPT',
-            erpnext_url: 'https://tally.zenpivot.in',
-            erpnext_api_key: 'k',
-            erpnext_api_secret: 's',
-        }])
+        mockSql.mockResolvedValueOnce([
+            {
+                erpnext_company: 'Covai Polymer Traders',
+                erpnext_abbr: 'CPT',
+                erpnext_url: 'https://tally.zenpivot.in',
+                erpnext_api_key: 'k',
+                erpnext_api_secret: 's',
+            },
+        ])
         // stock_item_masters with opening quantities — real Tally data
         mockSql.mockResolvedValueOnce([
             { tally_name: 'HDPE GRANULES', opening_qty: 500, opening_value: -32500, uom: 'KGS' },
@@ -436,13 +451,15 @@ describe('POST /dashboard/opening-stock', () => {
     })
 
     it('returns error when no items with opening_qty > 0', async () => {
-        mockSql.mockResolvedValueOnce([{
-            erpnext_company: 'Covai Polymer Traders',
-            erpnext_abbr: 'CPT',
-            erpnext_url: 'https://tally.zenpivot.in',
-            erpnext_api_key: 'k',
-            erpnext_api_secret: 's',
-        }])
+        mockSql.mockResolvedValueOnce([
+            {
+                erpnext_company: 'Covai Polymer Traders',
+                erpnext_abbr: 'CPT',
+                erpnext_url: 'https://tally.zenpivot.in',
+                erpnext_api_key: 'k',
+                erpnext_api_secret: 's',
+            },
+        ])
         mockSql.mockResolvedValueOnce([]) // no stock items
 
         const res = await app.inject({
@@ -469,13 +486,15 @@ describe('POST /dashboard/opening-stock', () => {
     })
 
     it('uses custom warehouse if provided', async () => {
-        mockSql.mockResolvedValueOnce([{
-            erpnext_company: 'Covai Polymer Traders',
-            erpnext_abbr: 'CPT',
-            erpnext_url: 'https://tally.zenpivot.in',
-            erpnext_api_key: 'k',
-            erpnext_api_secret: 's',
-        }])
+        mockSql.mockResolvedValueOnce([
+            {
+                erpnext_company: 'Covai Polymer Traders',
+                erpnext_abbr: 'CPT',
+                erpnext_url: 'https://tally.zenpivot.in',
+                erpnext_api_key: 'k',
+                erpnext_api_secret: 's',
+            },
+        ])
         mockSql.mockResolvedValueOnce([
             { tally_name: 'HDPE GRANULES', opening_qty: 500, opening_value: -32500, uom: 'KGS' },
         ])
@@ -515,13 +534,13 @@ describe('GET /dashboard/data-comparison', () => {
             ])
         // ERPNext countDocs — real counts from tally.zenpivot.in
         mockErpClient.countDocs
-            .mockResolvedValueOnce(192)   // Item
-            .mockResolvedValueOnce(456)   // Customer
-            .mockResolvedValueOnce(361)   // Supplier
-            .mockResolvedValueOnce(754)   // Sales Invoice
-            .mockResolvedValueOnce(228)   // Purchase Invoice
-            .mockResolvedValueOnce(752)   // Journal Entry
-            .mockResolvedValueOnce(1577)  // Payment Entry
+            .mockResolvedValueOnce(192) // Item
+            .mockResolvedValueOnce(456) // Customer
+            .mockResolvedValueOnce(361) // Supplier
+            .mockResolvedValueOnce(754) // Sales Invoice
+            .mockResolvedValueOnce(228) // Purchase Invoice
+            .mockResolvedValueOnce(752) // Journal Entry
+            .mockResolvedValueOnce(1577) // Payment Entry
 
         const res = await app.inject({
             method: 'GET',
@@ -531,8 +550,12 @@ describe('GET /dashboard/data-comparison', () => {
         expect(res.statusCode).toBe(200)
         const body = JSON.parse(res.body)
         expect(body.comparison).toHaveLength(7)
-        expect(body.comparison.find((c: Record<string, unknown>) => c.doctype === 'Sales Invoice').tallySynced).toBe(754)
-        expect(body.comparison.find((c: Record<string, unknown>) => c.doctype === 'Sales Invoice').erpnextCount).toBe(754)
+        expect(body.comparison.find((c: Record<string, unknown>) => c.doctype === 'Sales Invoice').tallySynced).toBe(
+            754,
+        )
+        expect(body.comparison.find((c: Record<string, unknown>) => c.doctype === 'Sales Invoice').erpnextCount).toBe(
+            754,
+        )
         expect(body.exceptions).toEqual({ UNMAPPED_LEDGER: 12, ERPNEXT_WRITE_FAILED: 3 })
         expect(body.totalTallySynced).toBe(754 + 228 + 1577 + 752)
         expect(body.totalErpNext).toBe(192 + 456 + 361 + 754 + 228 + 752 + 1577)

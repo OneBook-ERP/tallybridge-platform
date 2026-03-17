@@ -16,7 +16,7 @@ export interface TallyStockVoucherInput extends TallyVoucherInput {
 
 export interface TallyStockJournalEntryInput {
     stockItemName: string
-    isDeemedPositive: boolean   // true = receipt (into godown), false = issue (from godown)
+    isDeemedPositive: boolean // true = receipt (into godown), false = issue (from godown)
     godownName: string
     actualQty: number
     billedQty: number
@@ -53,7 +53,10 @@ export function buildStockVoucherXML(
         const amount = roundInr(item.amount ?? qty * rate)
         totalAmount += amount
 
-        if (stockEntry.stock_entry_type === 'Material Transfer Entry' || stockEntry.stock_entry_type === 'Material Transfer') {
+        if (
+            stockEntry.stock_entry_type === 'Material Transfer Entry' ||
+            stockEntry.stock_entry_type === 'Material Transfer'
+        ) {
             // Transfer: one issue entry (from s_warehouse) + one receipt entry (into t_warehouse)
             if (item.s_warehouse) {
                 stockJournalEntries.push({
@@ -83,9 +86,7 @@ export function buildStockVoucherXML(
             }
         } else if (stockEntry.stock_entry_type === 'Material Issue') {
             // Issue: only source godown, isDeemedPositive=false
-            const godown = item.s_warehouse
-                ? warehouseToGodown(item.s_warehouse, config)
-                : 'Main Location'
+            const godown = item.s_warehouse ? warehouseToGodown(item.s_warehouse, config) : 'Main Location'
             stockJournalEntries.push({
                 stockItemName: item.item_code,
                 isDeemedPositive: false,
@@ -99,9 +100,7 @@ export function buildStockVoucherXML(
             })
         } else {
             // Material Receipt: destination godown, isDeemedPositive=true
-            const godown = item.t_warehouse
-                ? warehouseToGodown(item.t_warehouse, config)
-                : 'Main Location'
+            const godown = item.t_warehouse ? warehouseToGodown(item.t_warehouse, config) : 'Main Location'
             stockJournalEntries.push({
                 stockItemName: item.item_code,
                 isDeemedPositive: true,
@@ -119,12 +118,11 @@ export function buildStockVoucherXML(
     // Stock Journal in Tally requires balancing ALLLEDGERENTRIES.LIST entries
     // pointing to the Stock-in-Hand account to balance the stock movement.
     // For transfers, net ledger impact is zero; for issue/receipt, use the mapped account.
-    const stockInHandAccount = reverseMapAccount(
-        config.accountMappings['Stock In Hand'] ??
-        config.accountMappings['Closing Stock'] ??
-        '',
-        config,
-    ) || 'Stock In Hand'
+    const stockInHandAccount =
+        reverseMapAccount(
+            config.accountMappings['Stock In Hand'] ?? config.accountMappings['Closing Stock'] ?? '',
+            config,
+        ) || 'Stock In Hand'
 
     if (stockEntry.stock_entry_type === 'Material Issue') {
         // Credit stock-in-hand (reducing stock value)

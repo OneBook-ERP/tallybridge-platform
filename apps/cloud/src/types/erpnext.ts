@@ -250,12 +250,17 @@ export interface StockEntryItem {
     item_name?: string
     qty: number
     uom: string
-    s_warehouse?: string   // source warehouse (for issue/transfer)
-    t_warehouse?: string   // target warehouse (for receipt/transfer)
+    s_warehouse?: string // source warehouse (for issue/transfer)
+    t_warehouse?: string // target warehouse (for receipt/transfer)
     basic_rate?: number
     amount?: number
     cost_center?: string
     gst_hsn_code?: string
 }
 
-export type ERPNextDocument = ERPNextSalesInvoice | ERPNextPurchaseInvoice | ERPNextPaymentEntry | ERPNextJournalEntry | ERPNextStockEntry
+export type ERPNextDocument =
+    | ERPNextSalesInvoice
+    | ERPNextPurchaseInvoice
+    | ERPNextPaymentEntry
+    | ERPNextJournalEntry
+    | ERPNextStockEntry

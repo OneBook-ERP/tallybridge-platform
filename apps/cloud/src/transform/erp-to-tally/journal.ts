@@ -24,10 +24,9 @@ export function erpJournalToTally(
         const tallyLedger = reverseMapAccount(acct.account, config)
 
         // Cost centre allocation: if ERPNext journal line has a cost_center, write it to Tally
-        const costCentreAllocations =
-            acct.cost_center
-                ? [{ name: formatCostCentre(acct.cost_center), amount }]
-                : undefined
+        const costCentreAllocations = acct.cost_center
+            ? [{ name: formatCostCentre(acct.cost_center), amount }]
+            : undefined
 
         return {
             ledgerName: tallyLedger,

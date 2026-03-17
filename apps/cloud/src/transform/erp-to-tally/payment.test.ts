@@ -48,8 +48,11 @@ describe('erpPaymentToTally', () => {
         expect(r1.ledgerEntries[0].ledgerName).toBe('Bank Account - TC')
 
         const payment = makeERPNextPaymentEntry({
-            payment_type: 'Pay', paid_from: 'Cash - TC',
-            party_type: 'Supplier', party: 'Supplier XYZ', references: [],
+            payment_type: 'Pay',
+            paid_from: 'Cash - TC',
+            party_type: 'Supplier',
+            party: 'Supplier XYZ',
+            references: [],
         })
         const r2 = erpPaymentToTally(payment, config)
         // Bank Cr is second entry for payment
@@ -75,9 +78,7 @@ describe('erpPaymentToTally', () => {
     it('receipt bill allocation amounts are negative', () => {
         const doc = makeERPNextPaymentEntry({
             payment_type: 'Receive',
-            references: [
-                { reference_doctype: 'Sales Invoice', reference_name: 'SINV-001', allocated_amount: 500 },
-            ],
+            references: [{ reference_doctype: 'Sales Invoice', reference_name: 'SINV-001', allocated_amount: 500 }],
         })
         const result = erpPaymentToTally(doc, config)
 
@@ -87,8 +88,11 @@ describe('erpPaymentToTally', () => {
 
     it('payment bill allocation amounts are positive', () => {
         const doc = makeERPNextPaymentEntry({
-            payment_type: 'Pay', party_type: 'Supplier', party: 'Supplier XYZ',
-            paid_from: 'Bank Account - TC', paid_to: 'Creditors - TC',
+            payment_type: 'Pay',
+            party_type: 'Supplier',
+            party: 'Supplier XYZ',
+            paid_from: 'Bank Account - TC',
+            paid_to: 'Creditors - TC',
             references: [{ reference_doctype: 'Purchase Invoice', reference_name: 'PINV-001', allocated_amount: 1180 }],
         })
         const result = erpPaymentToTally(doc, config)

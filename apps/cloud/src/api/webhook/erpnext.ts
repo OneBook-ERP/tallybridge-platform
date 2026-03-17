@@ -194,7 +194,11 @@ export const erpnextWebhookRoute: FastifyPluginAsync = async (fastify) => {
                     >
                     break
                 case 'Stock Entry':
-                    tallyPayload = buildStockVoucherXML(fullDoc as unknown as ERPNextStockEntry, config, action) as unknown as Record<string, unknown>
+                    tallyPayload = buildStockVoucherXML(
+                        fullDoc as unknown as ERPNextStockEntry,
+                        config,
+                        action,
+                    ) as unknown as Record<string, unknown>
                     break
                 case 'Purchase Receipt': {
                     // Treat as Material Receipt Stock Entry
@@ -209,7 +213,10 @@ export const erpnextWebhookRoute: FastifyPluginAsync = async (fastify) => {
                         custom_tally_guid: fullDoc.custom_tally_guid as string | undefined,
                         custom_sync_source: fullDoc.custom_sync_source as 'TALLYBRIDGE' | undefined,
                     }
-                    tallyPayload = buildStockVoucherXML(receiptAsStock, config, action) as unknown as Record<string, unknown>
+                    tallyPayload = buildStockVoucherXML(receiptAsStock, config, action) as unknown as Record<
+                        string,
+                        unknown
+                    >
                     break
                 }
                 case 'Delivery Note': {

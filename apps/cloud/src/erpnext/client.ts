@@ -279,7 +279,10 @@ export class ERPNextClient {
                     })
                     logger.info({ groupName }, 'Auto-created Item Group in ERPNext')
                 } catch (createErr) {
-                    logger.warn({ groupName, err: createErr }, 'Could not create Item Group — will fall back to All Item Groups')
+                    logger.warn(
+                        { groupName, err: createErr },
+                        'Could not create Item Group — will fall back to All Item Groups',
+                    )
                 }
             }
         }
@@ -591,8 +594,14 @@ export class ERPNextClient {
             try {
                 const parents = await this.listDocs<{ name: string }>(
                     'Account',
-                    [['is_group', '=', 1], ['account_type', '=', 'Bank'], ['company', '=', company]],
-                    ['name'], undefined, 1,
+                    [
+                        ['is_group', '=', 1],
+                        ['account_type', '=', 'Bank'],
+                        ['company', '=', company],
+                    ],
+                    ['name'],
+                    undefined,
+                    1,
                 )
                 parentAccount = parents[0]?.name ?? `Bank Accounts - ${abbr}`
             } catch {
@@ -615,9 +624,8 @@ export class ERPNextClient {
             })
         } catch {
             // Parent may not exist — try the other common root name format
-            const fallbackParent = accountType === 'Income Account'
-                ? `Indirect Income - ${abbr}`
-                : `Indirect Expenses - ${abbr}`
+            const fallbackParent =
+                accountType === 'Income Account' ? `Indirect Income - ${abbr}` : `Indirect Expenses - ${abbr}`
             await this.createDoc('Account', {
                 doctype: 'Account',
                 account_name: ledgerName,
@@ -644,7 +652,11 @@ export class ERPNextClient {
         // Check if opening stock reconciliation already exists for this company
         const existing = await this.listDocs<{ name: string }>(
             'Stock Reconciliation',
-            [['purpose', '=', 'Opening Stock'], ['company', '=', company], ['docstatus', '=', 1]],
+            [
+                ['purpose', '=', 'Opening Stock'],
+                ['company', '=', company],
+                ['docstatus', '=', 1],
+            ],
             ['name'],
             undefined,
             1,
@@ -657,7 +669,10 @@ export class ERPNextClient {
         // Find Temporary Opening account for the difference account
         const tempAccounts = await this.listDocs<{ name: string }>(
             'Account',
-            [['account_type', '=', 'Temporary'], ['company', '=', company]],
+            [
+                ['account_type', '=', 'Temporary'],
+                ['company', '=', company],
+            ],
             ['name'],
             undefined,
             1,

@@ -60,12 +60,7 @@ describe('loop-guard', () => {
     it('key format is tb:guard:{companyId}:{guid}', async () => {
         await markWritten('my-company', 'my-guid')
 
-        expect(mockRedis.set).toHaveBeenCalledWith(
-            'tb:guard:my-company:my-guid',
-            '1',
-            'EX',
-            120,
-        )
+        expect(mockRedis.set).toHaveBeenCalledWith('tb:guard:my-company:my-guid', '1', 'EX', 120)
     })
 
     it('markWritten then isOwnWrite returns true', async () => {

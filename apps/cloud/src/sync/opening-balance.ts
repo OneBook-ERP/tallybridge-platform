@@ -52,11 +52,17 @@ export async function generateOpeningBalance(opts: OpeningBalanceOptions): Promi
         // Check docstatus — if already submitted, we're done
         const existingDoc = await erpClient.getDoc<{ docstatus?: number }>('Journal Entry', existing)
         if ((existingDoc.docstatus ?? 0) >= 1) {
-            logger.info({ companyId: opts.companyId, erpName: existing }, 'Opening balance JE already submitted — skipping')
+            logger.info(
+                { companyId: opts.companyId, erpName: existing },
+                'Opening balance JE already submitted — skipping',
+            )
             return existing
         }
         // Draft exists — delete it so we can recreate with the latest filtering logic
-        logger.info({ companyId: opts.companyId, erpName: existing }, 'Deleting stale draft opening balance JE to recreate')
+        logger.info(
+            { companyId: opts.companyId, erpName: existing },
+            'Deleting stale draft opening balance JE to recreate',
+        )
         try {
             await erpClient.deleteDoc('Journal Entry', existing)
         } catch (delErr) {
@@ -123,9 +129,16 @@ export async function generateOpeningBalance(opts: OpeningBalanceOptions): Promi
 
     // Auto-create any missing GL accounts in ERPNext before posting the JE.
     // ensureGLAccount takes base name (without "- ABBR") so strip the suffix first.
-    const abbr = opts.erpnextAbbr ?? opts.erpnextCompany.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 3)
+    const abbr =
+        opts.erpnextAbbr ??
+        opts.erpnextCompany
+            .split(' ')
+            .map((w) => w[0])
+            .join('')
+            .toUpperCase()
+            .slice(0, 3)
     const abbrSuffix = ` - ${abbr}`
-    const stripAbbr = (name: string) => name.endsWith(abbrSuffix) ? name.slice(0, -abbrSuffix.length) : name
+    const stripAbbr = (name: string) => (name.endsWith(abbrSuffix) ? name.slice(0, -abbrSuffix.length) : name)
     for (const acct of accounts) {
         try {
             await erpClient.ensureGLAccount(stripAbbr(acct.account), opts.erpnextCompany, abbr)
@@ -145,20 +158,24 @@ export async function generateOpeningBalance(opts: OpeningBalanceOptions): Promi
     let filteredCredit = 0
     for (const acct of accounts) {
         try {
-            const accountDoc = await erpClient.getDoc<{ account_type?: string; root_type?: string }>('Account', acct.account)
+            const accountDoc = await erpClient.getDoc<{ account_type?: string; root_type?: string }>(
+                'Account',
+                acct.account,
+            )
             if (accountDoc.account_type && DEPRECIATION_TYPES.has(accountDoc.account_type)) {
-                warnings.push(`Skipping depreciation account: ${acct.account} (account_type=${accountDoc.account_type})`)
+                warnings.push(
+                    `Skipping depreciation account: ${acct.account} (account_type=${accountDoc.account_type})`,
+                )
                 continue
             }
             if (accountDoc.root_type && PL_ROOT_TYPES.has(accountDoc.root_type)) {
-                warnings.push(`Skipping P&L account: ${acct.account} (root_type=${accountDoc.root_type}) — not valid in Opening Entry`)
+                warnings.push(
+                    `Skipping P&L account: ${acct.account} (root_type=${accountDoc.root_type}) — not valid in Opening Entry`,
+                )
                 continue
             }
             // Payable/Receivable without a party needs is_advance='No' to suppress ERPNext warning
-            if (
-                (accountDoc.account_type === 'Payable' || accountDoc.account_type === 'Receivable') &&
-                !acct.party
-            ) {
+            if ((accountDoc.account_type === 'Payable' || accountDoc.account_type === 'Receivable') && !acct.party) {
                 acct.is_advance = 'No'
             }
         } catch (_) {
@@ -186,7 +203,9 @@ export async function generateOpeningBalance(opts: OpeningBalanceOptions): Promi
             `Temporary Opening - ${abbr}`
         try {
             await erpClient.ensureGLAccount(stripAbbr(tempAccount), opts.erpnextCompany, abbr)
-        } catch (_) { /* best-effort */ }
+        } catch (_) {
+            /* best-effort */
+        }
         accounts.push({
             account: tempAccount,
             debit_in_account_currency: diff < 0 ? Math.abs(diff) : 0,
@@ -230,7 +249,10 @@ export async function generateOpeningBalance(opts: OpeningBalanceOptions): Promi
             const found = await erpClient.findByTallyGUID('Journal Entry', existingGuid)
             if (found) {
                 jeName = found
-                logger.info({ companyId: opts.companyId, erpName: jeName }, 'Found existing draft opening balance JE — will try to submit')
+                logger.info(
+                    { companyId: opts.companyId, erpName: jeName },
+                    'Found existing draft opening balance JE — will try to submit',
+                )
             } else {
                 logger.error({ err, companyId: opts.companyId }, 'Failed to create opening balance Journal Entry')
                 throw err

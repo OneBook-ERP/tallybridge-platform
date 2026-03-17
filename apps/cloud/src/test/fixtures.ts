@@ -20,7 +20,7 @@ export function makeConfig(overrides: Partial<CompanyConfig> = {}): CompanyConfi
             'Sundry Debtors': '1310 - Debtors - TC',
             'Sundry Creditors': '2110 - Creditors - TC',
             'OFFICE RENT': '5209 - Office Rent - TC',
-            'PURCHASES': '1410 - Stock In Hand - TC',
+            PURCHASES: '1410 - Stock In Hand - TC',
             'Default Income': '4110 - Sales - TC',
             'Default Purchase': '1410 - Stock In Hand - TC',
         },
@@ -130,7 +130,15 @@ export function makePurchaseVoucher(overrides: Partial<TallyVoucher> = {}): Tall
             }),
             makeLedgerEntry({ ledgerName: 'PURCHASES', isDeemedPositive: true, amount: 822500 }),
         ],
-        inventoryEntries: [makeInventoryEntry({ stockItemName: 'FILLER', accountLedgerName: 'PURCHASES', rate: 31, amount: 310000, actualQty: 10000 })],
+        inventoryEntries: [
+            makeInventoryEntry({
+                stockItemName: 'FILLER',
+                accountLedgerName: 'PURCHASES',
+                rate: 31,
+                amount: 310000,
+                actualQty: 10000,
+            }),
+        ],
         ...overrides,
     })
 }
@@ -150,7 +158,12 @@ export function makePaymentVoucher(overrides: Partial<TallyVoucher> = {}): Tally
         narration: 'Supplier payment',
         inventoryEntries: [],
         ledgerEntries: [
-            makeLedgerEntry({ ledgerName: 'SERVO PACKAGING LIMITED', isPartyLedger: true, isDeemedPositive: true, amount: 33000 }),
+            makeLedgerEntry({
+                ledgerName: 'SERVO PACKAGING LIMITED',
+                isPartyLedger: true,
+                isDeemedPositive: true,
+                amount: 33000,
+            }),
             makeLedgerEntry({ ledgerName: 'HDFC BANK', isDeemedPositive: false, amount: -33000 }),
         ],
         ...overrides,
@@ -262,16 +275,9 @@ export function makePascalCaseVoucher(): Record<string, unknown> {
 
 // ── ERPNext document factories (for erp-to-tally transform tests) ────────────
 
-import type {
-    ERPNextSalesInvoice,
-    ERPNextPurchaseInvoice,
-    ERPNextPaymentEntry,
-    ERPNextJournalEntry,
-} from '../types'
+import type { ERPNextSalesInvoice, ERPNextPurchaseInvoice, ERPNextPaymentEntry, ERPNextJournalEntry } from '../types'
 
-export function makeERPNextSalesInvoice(
-    overrides: Partial<ERPNextSalesInvoice> = {},
-): ERPNextSalesInvoice {
+export function makeERPNextSalesInvoice(overrides: Partial<ERPNextSalesInvoice> = {}): ERPNextSalesInvoice {
     // Mirrors real SINV-26-00023 from ERPNext (Covai Polymer Traders)
     return {
         doctype: 'Sales Invoice',
@@ -312,9 +318,7 @@ export function makeERPNextSalesInvoice(
     }
 }
 
-export function makeERPNextPurchaseInvoice(
-    overrides: Partial<ERPNextPurchaseInvoice> = {},
-): ERPNextPurchaseInvoice {
+export function makeERPNextPurchaseInvoice(overrides: Partial<ERPNextPurchaseInvoice> = {}): ERPNextPurchaseInvoice {
     // Mirrors real PINV-26-00001 from ERPNext (SERVO PACKAGING LIMITED, inter-state)
     return {
         doctype: 'Purchase Invoice',
@@ -355,9 +359,7 @@ export function makeERPNextPurchaseInvoice(
     }
 }
 
-export function makeERPNextPaymentEntry(
-    overrides: Partial<ERPNextPaymentEntry> = {},
-): ERPNextPaymentEntry {
+export function makeERPNextPaymentEntry(overrides: Partial<ERPNextPaymentEntry> = {}): ERPNextPaymentEntry {
     // Mirrors real ACC-PAY-2026-00002 from ERPNext
     return {
         doctype: 'Payment Entry',
@@ -381,9 +383,7 @@ export function makeERPNextPaymentEntry(
     }
 }
 
-export function makeERPNextJournalEntry(
-    overrides: Partial<ERPNextJournalEntry> = {},
-): ERPNextJournalEntry {
+export function makeERPNextJournalEntry(overrides: Partial<ERPNextJournalEntry> = {}): ERPNextJournalEntry {
     // Mirrors real ACC-JV-2026-00001 structure from ERPNext
     return {
         doctype: 'Journal Entry',
@@ -409,7 +409,12 @@ export function makeInterStateVoucher(overrides: Partial<TallyVoucher> = {}): Ta
         placeOfSupply: 'Maharashtra',
         partyGSTIN: '27AAHCS6789E1ZA',
         ledgerEntries: [
-            makeLedgerEntry({ ledgerName: 'SERVO PACKAGING LIMITED', isPartyLedger: true, isDeemedPositive: true, amount: 38645 }),
+            makeLedgerEntry({
+                ledgerName: 'SERVO PACKAGING LIMITED',
+                isPartyLedger: true,
+                isDeemedPositive: true,
+                amount: 38645,
+            }),
             makeLedgerEntry({ ledgerName: 'B2B SALES', amount: -32750 }),
             makeLedgerEntry({ ledgerName: 'OUTPUT IGST', amount: -5895 }),
         ],

@@ -326,7 +326,7 @@ export async function processTallyVoucher(voucher: TallyVoucher, config: ConfigW
         // Skip bank/cash/capital ledgers — they are GL accounts, not business parties.
         if (doctype === 'Sales Invoice' && doc.customer) {
             const partyName = doc.customer as string
-            if (!await isAccountingLedger(partyName)) {
+            if (!(await isAccountingLedger(partyName))) {
                 const group = await getPartyGroup(partyName)
                 await erpClient.ensureCustomer(partyName, (doc.customer_gstin as string) || undefined, group)
                 await ensurePartyAddressContact('Customer', partyName)
@@ -334,7 +334,7 @@ export async function processTallyVoucher(voucher: TallyVoucher, config: ConfigW
         }
         if (doctype === 'Purchase Invoice' && doc.supplier) {
             const partyName = doc.supplier as string
-            if (!await isAccountingLedger(partyName)) {
+            if (!(await isAccountingLedger(partyName))) {
                 const group = await getPartyGroup(partyName)
                 await erpClient.ensureSupplier(partyName, (doc.supplier_gstin as string) || undefined, group)
                 await ensurePartyAddressContact('Supplier', partyName)
@@ -342,7 +342,7 @@ export async function processTallyVoucher(voucher: TallyVoucher, config: ConfigW
         }
         if (doctype === 'Payment Entry' && doc.party) {
             const partyName = doc.party as string
-            if (!await isAccountingLedger(partyName)) {
+            if (!(await isAccountingLedger(partyName))) {
                 const group = await getPartyGroup(partyName)
                 if (doc.party_type === 'Customer') {
                     await erpClient.ensureCustomer(partyName, undefined, group)
@@ -444,7 +444,10 @@ export async function processTallyVoucher(voucher: TallyVoucher, config: ConfigW
             }
 
             // Retry 2: Payment references exceed outstanding — strip references, post as unallocated advance
-            else if (/Allocated Amount cannot be greater than outstanding/i.test(errMsg) && doctype === 'Payment Entry') {
+            else if (
+                /Allocated Amount cannot be greater than outstanding/i.test(errMsg) &&
+                doctype === 'Payment Entry'
+            ) {
                 logger.info({ guid }, 'Retrying Payment Entry without references (allocation > outstanding)')
                 const retryDoc = { ...docPayload, references: [] }
                 const created = await erpClient.createDoc<{ name: string }>(doctype, retryDoc)
@@ -456,7 +459,12 @@ export async function processTallyVoucher(voucher: TallyVoucher, config: ConfigW
             // Retry 3: GST category mismatch — downgrade to Unregistered (customer not registered in ERPNext)
             else if (/GST Category should be one of.*Unregistered.*Overseas/i.test(errMsg)) {
                 logger.info({ guid }, 'Retrying with gst_category=Unregistered (GST category mismatch)')
-                const retryDoc = { ...docPayload, gst_category: 'Unregistered', customer_gstin: undefined, is_inter_state: 0 }
+                const retryDoc = {
+                    ...docPayload,
+                    gst_category: 'Unregistered',
+                    customer_gstin: undefined,
+                    is_inter_state: 0,
+                }
                 const created = await erpClient.createDoc<{ name: string }>(doctype, retryDoc)
                 erpName = created.name
                 await erpClient.submitDoc(doctype, erpName)
@@ -468,7 +476,7 @@ export async function processTallyVoucher(voucher: TallyVoucher, config: ConfigW
                 logger.info({ guid }, 'Retrying with tax_category override to bypass GST amount recalculation')
                 const taxes = ((docPayload.taxes as Array<Record<string, unknown>>) ?? []).map((t) => ({
                     ...t,
-                    charge_type: 'Actual',  // pass exact tax_amount without rate recalculation
+                    charge_type: 'Actual', // pass exact tax_amount without rate recalculation
                 }))
                 const retryDoc = { ...docPayload, taxes }
                 const created = await erpClient.createDoc<{ name: string }>(doctype, retryDoc)

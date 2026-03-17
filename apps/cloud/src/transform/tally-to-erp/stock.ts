@@ -52,7 +52,10 @@ export function transformStock(
     warehouseResolver?: (godown: string) => string,
 ): TransformResult<ERPNextStockEntry> {
     // Must have inventory entries to create a Stock Entry
-    if (voucher.inventoryEntries.length === 0 && (!voucher.stockJournalEntries || voucher.stockJournalEntries.length === 0)) {
+    if (
+        voucher.inventoryEntries.length === 0 &&
+        (!voucher.stockJournalEntries || voucher.stockJournalEntries.length === 0)
+    ) {
         return {
             success: false,
             error: {
@@ -66,15 +69,17 @@ export function transformStock(
     const defaultWarehouse = config.defaultWarehouse ?? `Stores - ${config.erpnextAbbr ?? 'CPT'}`
 
     // Default resolver: godown name → warehouse (strips ERPNext ABBR suffix if present, else appends it)
-    const resolveWarehouse = warehouseResolver ?? ((godown: string): string => {
-        if (!godown || godown.toLowerCase() === 'main location' || godown === '') {
-            return defaultWarehouse
-        }
-        const abbr = config.erpnextAbbr ?? 'CPT'
-        // If already has " - ABBR" suffix, return as-is
-        if (godown.endsWith(` - ${abbr}`)) return godown
-        return `${godown} - ${abbr}`
-    })
+    const resolveWarehouse =
+        warehouseResolver ??
+        ((godown: string): string => {
+            if (!godown || godown.toLowerCase() === 'main location' || godown === '') {
+                return defaultWarehouse
+            }
+            const abbr = config.erpnextAbbr ?? 'CPT'
+            // If already has " - ABBR" suffix, return as-is
+            if (godown.endsWith(` - ${abbr}`)) return godown
+            return `${godown} - ${abbr}`
+        })
 
     // Determine if entries have source and/or destination godowns
     // Stock journal entries have explicit godownName / destinationGodownName
@@ -83,9 +88,7 @@ export function transformStock(
     const hasSource = hasStockJournalEntries
         ? entries.some((e) => !!e.godownName)
         : voucher.inventoryEntries.some((e) => !!e.godownName)
-    const hasDestination = hasStockJournalEntries
-        ? entries.some((e) => !!e.destinationGodownName)
-        : false // inventory entries don't have a separate destination
+    const hasDestination = hasStockJournalEntries ? entries.some((e) => !!e.destinationGodownName) : false // inventory entries don't have a separate destination
 
     const stockEntryType = detectStockEntryType(voucher.voucherTypeName, hasSource, hasDestination)
 
@@ -160,12 +163,14 @@ export function transformStock(
         stock_entry_type: stockEntryType,
         posting_date: tallyDateToErp(voucher.date),
         company: config.erpnextCompany,
-        from_warehouse: stockEntryType === 'Material Issue' || stockEntryType === 'Material Transfer Entry'
-            ? defaultWarehouse
-            : undefined,
-        to_warehouse: stockEntryType === 'Material Receipt' || stockEntryType === 'Material Transfer Entry'
-            ? defaultWarehouse
-            : undefined,
+        from_warehouse:
+            stockEntryType === 'Material Issue' || stockEntryType === 'Material Transfer Entry'
+                ? defaultWarehouse
+                : undefined,
+        to_warehouse:
+            stockEntryType === 'Material Receipt' || stockEntryType === 'Material Transfer Entry'
+                ? defaultWarehouse
+                : undefined,
         remarks: voucher.narration || undefined,
         items,
         custom_tally_guid: voucher.guid,

@@ -5,7 +5,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import Fastify, { type FastifyInstance } from 'fastify'
 
 const { mockSql } = vi.hoisted(() => {
-    const mockSql = Object.assign(vi.fn(() => Promise.resolve([])), { json: (v: unknown) => v })
+    const mockSql = Object.assign(
+        vi.fn(() => Promise.resolve([])),
+        { json: (v: unknown) => v },
+    )
     return { mockSql }
 })
 
@@ -60,7 +63,7 @@ describe('PUT /connector/config', () => {
         await app.inject({
             method: 'PUT',
             url: '/connector/config',
-            payload: { ...base, accountMappings: { _type: 'coa', 'Sales': 'B2B' } },
+            payload: { ...base, accountMappings: { _type: 'coa', Sales: 'B2B' } },
             headers: { authorization: 'Bearer t' },
         })
 
@@ -73,7 +76,7 @@ describe('PUT /connector/config', () => {
         const res = await app.inject({
             method: 'PUT',
             url: '/connector/config',
-            payload: { ...base, accountMappings: { 'Sales': '', 'Bank': null, 'Cash': 'Petty Cash' } },
+            payload: { ...base, accountMappings: { Sales: '', Bank: null, Cash: 'Petty Cash' } },
             headers: { authorization: 'Bearer t' },
         })
 
@@ -145,7 +148,7 @@ describe('PUT /connector/config', () => {
         const res = await app.inject({
             method: 'PUT',
             url: '/connector/config',
-            payload: { ...base, accountMappings: { 'A': 'B' } },
+            payload: { ...base, accountMappings: { A: 'B' } },
             headers: { authorization: 'Bearer t' },
         })
 

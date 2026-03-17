@@ -60,16 +60,20 @@ describe('transformStock', () => {
         if (!result.success) return
         // No source, no stockJournalEntries → defaults to Material Issue or Receipt by voucher name
         // Stock Journal with no explicit direction defaults to Material Issue
-        expect(['Material Issue', 'Material Receipt', 'Material Transfer Entry']).toContain(
-            result.doc.stock_entry_type,
-        )
+        expect(['Material Issue', 'Material Receipt', 'Material Transfer Entry']).toContain(result.doc.stock_entry_type)
     })
 
     it('Physical Stock voucher → Material Receipt with items', () => {
         const voucher = makeStockVoucher({
             voucherTypeName: 'Physical Stock',
             inventoryEntries: [
-                makeInventoryEntry({ stockItemName: 'HDPE GRANULES', billedQty: 250, rate: 93, amount: 23250, godownName: 'Main Location' }),
+                makeInventoryEntry({
+                    stockItemName: 'HDPE GRANULES',
+                    billedQty: 250,
+                    rate: 93,
+                    amount: 23250,
+                    godownName: 'Main Location',
+                }),
             ],
         })
         const result = transformStock(voucher, config)

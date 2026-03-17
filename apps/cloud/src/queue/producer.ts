@@ -27,12 +27,7 @@ function voucherPriority(records: unknown[]): number {
     // Scan the first record to detect the dominant voucher type, then assign sub-priority.
     const first = records[0] as Record<string, unknown> | undefined
     if (!first) return 10
-    const vtype = (
-        first['VoucherTypeName'] ??
-        first['voucherTypeName'] ??
-        first['VOUCHERTYPENAME'] ??
-        ''
-    ) as string
+    const vtype = (first['VoucherTypeName'] ?? first['voucherTypeName'] ?? first['VOUCHERTYPENAME'] ?? '') as string
     if (/purchase/i.test(vtype)) return 10
     if (/sales/i.test(vtype)) return 11
     if (/journal|contra/i.test(vtype)) return 12

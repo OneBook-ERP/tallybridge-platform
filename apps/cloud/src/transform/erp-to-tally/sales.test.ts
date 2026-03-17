@@ -86,10 +86,17 @@ describe('erpSalesToTally', () => {
 
     it('reverseMapAccount returns ERPNext account if no mapping', () => {
         const doc = makeERPNextSalesInvoice({
-            items: [{
-                item_code: 'X', item_name: 'X', qty: 1, uom: 'Nos', rate: 100, amount: 100,
-                income_account: 'Unmapped Account - TC',
-            }],
+            items: [
+                {
+                    item_code: 'X',
+                    item_name: 'X',
+                    qty: 1,
+                    uom: 'Nos',
+                    rate: 100,
+                    amount: 100,
+                    income_account: 'Unmapped Account - TC',
+                },
+            ],
         })
         const result = erpSalesToTally(doc, config)
 

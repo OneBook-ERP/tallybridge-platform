@@ -117,9 +117,7 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
 
             if (retryableCodes.includes(code)) {
                 // Extract GUIDs from document_ref = 'Voucher:{guid}'
-                const guids = openExceptions
-                    .map(e => e.document_ref.replace(/^Voucher:/, ''))
-                    .filter(Boolean)
+                const guids = openExceptions.map((e) => e.document_ref.replace(/^Voucher:/, '')).filter(Boolean)
 
                 if (guids.length > 0) {
                     // Delete sync_records so the connector re-sends on next sync
@@ -130,7 +128,7 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
                     `
                 }
                 // Mark all as resolved
-                const ids = openExceptions.map(e => e.id)
+                const ids = openExceptions.map((e) => e.id)
                 if (ids.length > 0) {
                     await sql`
                         UPDATE exception_register
@@ -161,7 +159,10 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
                 }
             }
 
-            logger.info({ companyId, code, total: openExceptions.length, resolved: resolvedCount }, 'Reprocessed exceptions')
+            logger.info(
+                { companyId, code, total: openExceptions.length, resolved: resolvedCount },
+                'Reprocessed exceptions',
+            )
         } else {
             const result = await sql`
                 UPDATE exception_register
@@ -223,63 +224,77 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
     })
 
     // POST /dashboard/opening-stock — create Opening Stock Reconciliation in ERPNext from stock_item_masters
-    app.post<{ Body: { companyId: string; postingDate: string; warehouse?: string } }>('/dashboard/opening-stock', async (req) => {
-        const { companyId, postingDate, warehouse } = req.body ?? {}
-        if (!companyId || !postingDate) {
-            return { ok: false, error: 'companyId and postingDate are required' }
-        }
+    app.post<{ Body: { companyId: string; postingDate: string; warehouse?: string } }>(
+        '/dashboard/opening-stock',
+        async (req) => {
+            const { companyId, postingDate, warehouse } = req.body ?? {}
+            if (!companyId || !postingDate) {
+                return { ok: false, error: 'companyId and postingDate are required' }
+            }
 
-        const [company] = await sql<{
-            erpnext_company: string
-            erpnext_abbr: string | null
-            erpnext_url: string
-            erpnext_api_key: string
-            erpnext_api_secret: string
-        }[]>`
+            const [company] = await sql<
+                {
+                    erpnext_company: string
+                    erpnext_abbr: string | null
+                    erpnext_url: string
+                    erpnext_api_key: string
+                    erpnext_api_secret: string
+                }[]
+            >`
             SELECT erpnext_company, erpnext_abbr, erpnext_url, erpnext_api_key, erpnext_api_secret
             FROM companies WHERE id = ${companyId}
         `
-        if (!company) return { ok: false, error: 'Company not found' }
+            if (!company) return { ok: false, error: 'Company not found' }
 
-        const abbr = company.erpnext_abbr ?? company.erpnext_company.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 3)
-        const resolvedWarehouse = warehouse ?? `Stores - ${abbr}`
+            const abbr =
+                company.erpnext_abbr ??
+                company.erpnext_company
+                    .split(' ')
+                    .map((w: string) => w[0])
+                    .join('')
+                    .toUpperCase()
+                    .slice(0, 3)
+            const resolvedWarehouse = warehouse ?? `Stores - ${abbr}`
 
-        const openingRows = await sql<{ tally_name: string; opening_qty: number; opening_value: number; uom: string | null }[]>`
+            const openingRows = await sql<
+                { tally_name: string; opening_qty: number; opening_value: number; uom: string | null }[]
+            >`
             SELECT tally_name, opening_qty, opening_value, uom
             FROM stock_item_masters
             WHERE company_id = ${companyId} AND opening_qty > 0
         `
 
-        if (openingRows.length === 0) {
-            return { ok: false, error: 'No stock items with opening_qty > 0 found in stock_item_masters' }
-        }
+            if (openingRows.length === 0) {
+                return { ok: false, error: 'No stock items with opening_qty > 0 found in stock_item_masters' }
+            }
 
-        const { ERPNextClient } = await import('../../erpnext/client')
-        const client = new ERPNextClient({
-            baseUrl: company.erpnext_url,
-            apiKey: company.erpnext_api_key,
-            apiSecret: company.erpnext_api_secret,
-        })
+            const { ERPNextClient } = await import('../../erpnext/client')
+            const client = new ERPNextClient({
+                baseUrl: company.erpnext_url,
+                apiKey: company.erpnext_api_key,
+                apiSecret: company.erpnext_api_secret,
+            })
 
-        try {
-            await client.ensureOpeningStockEntry(
-                openingRows.map((r) => ({
-                    itemCode: r.tally_name,
-                    qty: Number(r.opening_qty),
-                    // Tally stores OPENINGVALUE as negative (credit convention) — use abs for valuation rate
-                    rate: r.opening_qty > 0 ? Math.abs(Number(r.opening_value)) / Number(r.opening_qty) : 0,
-                    uom: r.uom ?? 'Nos',
-                })),
-                company.erpnext_company,
-                resolvedWarehouse,
-                postingDate,
-            )
-            return { ok: true, itemCount: openingRows.length, warehouse: resolvedWarehouse }
-        } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err)
-            return { ok: false, error: msg }
-        }
-    })
+            try {
+                await client.ensureOpeningStockEntry(
+                    openingRows.map((r) => ({
+                        itemCode: r.tally_name,
+                        qty: Number(r.opening_qty),
+                        // Tally stores OPENINGVALUE as negative (credit convention) — use abs for valuation rate
+                        rate: r.opening_qty > 0 ? Math.abs(Number(r.opening_value)) / Number(r.opening_qty) : 0,
+                        uom: r.uom ?? 'Nos',
+                    })),
+                    company.erpnext_company,
+                    resolvedWarehouse,
+                    postingDate,
+                )
+                return { ok: true, itemCount: openingRows.length, warehouse: resolvedWarehouse }
+            } catch (err) {
+                const msg = err instanceof Error ? err.message : String(err)
+                return { ok: false, error: msg }
+            }
+        },
+    )
 
     // GET /dashboard/data-comparison?companyId=... — Tally vs ERPNext document counts
     // POST /dashboard/reset-sync?companyId=...&includeMasters=true — clears sync history but keeps config/mappings

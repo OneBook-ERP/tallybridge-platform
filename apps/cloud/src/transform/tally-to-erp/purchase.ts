@@ -68,9 +68,7 @@ export function transformPurchase(
         // When update_stock=1, ERPNext requires expense_account to be the warehouse
         // valuation account (Stock In Hand), not COGS — use config mapping if available.
         const stockAcct = config.defaultWarehouse
-            ? (config.accountMappings['Stock In Hand'] ??
-              config.accountMappings['Closing Stock'] ??
-              undefined)
+            ? (config.accountMappings['Stock In Hand'] ?? config.accountMappings['Closing Stock'] ?? undefined)
             : actualAcct
         items.push({
             item_code: sanitiseName(inv.stockItemName),
@@ -125,18 +123,14 @@ export function transformPurchase(
     const hasForeignCurrency = !!voucher.foreignCurrency && voucher.foreignCurrency !== 'INR'
     const computedCurrency = hasForeignCurrency ? voucher.foreignCurrency : (config.currency ?? 'INR')
     const computedConversionRate =
-        hasForeignCurrency && voucher.foreignAmount && grandTotal
-            ? roundInr(voucher.foreignAmount / grandTotal)
-            : 1
+        hasForeignCurrency && voucher.foreignAmount && grandTotal ? roundInr(voucher.foreignAmount / grandTotal) : 1
 
     // Address sync
     const supplierAddressStr =
-        Array.isArray(voucher.address) && voucher.address.length > 0
-            ? voucher.address.join('\n')
-            : undefined
+        Array.isArray(voucher.address) && voucher.address.length > 0 ? voucher.address.join('\n') : undefined
 
     // e-Invoice / e-Way Bill fields
-    const irnValue = (voucher.irn || voucher.irnNo) || undefined
+    const irnValue = voucher.irn || voucher.irnNo || undefined
     const irnAckNo = voucher.irnAckNo || undefined
     const eWayBill = voucher.ewayBillNumber || undefined
 

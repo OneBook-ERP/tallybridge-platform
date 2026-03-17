@@ -166,7 +166,12 @@ describe('transformPayment', () => {
         const bankConfig = makeConfig({ bankLedgers: ['HDFC BANK'] })
         const voucher = makePaymentVoucher({
             ledgerEntries: [
-                makeLedgerEntry({ ledgerName: 'HDFC BANK', isPartyLedger: true, isDeemedPositive: true, amount: 10000 }),
+                makeLedgerEntry({
+                    ledgerName: 'HDFC BANK',
+                    isPartyLedger: true,
+                    isDeemedPositive: true,
+                    amount: 10000,
+                }),
                 makeLedgerEntry({ ledgerName: 'Cash', isDeemedPositive: false, amount: -10000 }),
             ],
         })
@@ -227,7 +232,12 @@ describe('transformPayment', () => {
             guid: 'ABCDEF123456789012345678',
             voucherNumber: '',
             ledgerEntries: [
-                makeLedgerEntry({ ledgerName: 'Supplier XYZ', isPartyLedger: true, isDeemedPositive: true, amount: 5000 }),
+                makeLedgerEntry({
+                    ledgerName: 'Supplier XYZ',
+                    isPartyLedger: true,
+                    isDeemedPositive: true,
+                    amount: 5000,
+                }),
                 makeLedgerEntry({ ledgerName: 'HDFC BANK', isDeemedPositive: false, amount: -5000 }),
             ],
         })
@@ -242,7 +252,12 @@ describe('transformPayment', () => {
         // Party entry has negative amount (as in a receipt)
         const voucher = makeReceiptVoucher({
             ledgerEntries: [
-                makeLedgerEntry({ ledgerName: 'Customer ABC', isPartyLedger: true, isDeemedPositive: false, amount: -15000 }),
+                makeLedgerEntry({
+                    ledgerName: 'Customer ABC',
+                    isPartyLedger: true,
+                    isDeemedPositive: false,
+                    amount: -15000,
+                }),
                 makeLedgerEntry({ ledgerName: 'HDFC BANK', isDeemedPositive: true, amount: 15000 }),
             ],
         })
@@ -257,7 +272,12 @@ describe('transformPayment', () => {
     it('cash payment uses Cash account as paid_from', () => {
         const voucher = makePaymentVoucher({
             ledgerEntries: [
-                makeLedgerEntry({ ledgerName: 'Supplier XYZ', isPartyLedger: true, isDeemedPositive: true, amount: 3000 }),
+                makeLedgerEntry({
+                    ledgerName: 'Supplier XYZ',
+                    isPartyLedger: true,
+                    isDeemedPositive: true,
+                    amount: 3000,
+                }),
                 makeLedgerEntry({ ledgerName: 'Cash', isDeemedPositive: false, amount: -3000 }),
             ],
         })

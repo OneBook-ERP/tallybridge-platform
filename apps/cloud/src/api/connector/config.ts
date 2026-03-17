@@ -109,8 +109,15 @@ export const configRoute: FastifyPluginAsync = async (fastify) => {
             }
 
             // Update companies with ERPNext connection details
-            if (body.erpnextUrl || body.erpnextApiKey || body.erpnextApiSecret || body.erpnextCompany ||
-                body.erpnextGstin || body.erpnextWarehouse || body.erpnextCostCenter) {
+            if (
+                body.erpnextUrl ||
+                body.erpnextApiKey ||
+                body.erpnextApiSecret ||
+                body.erpnextCompany ||
+                body.erpnextGstin ||
+                body.erpnextWarehouse ||
+                body.erpnextCostCenter
+            ) {
                 await sql`
                     UPDATE companies SET
                         erpnext_url         = COALESCE(${body.erpnextUrl ?? null}, erpnext_url),

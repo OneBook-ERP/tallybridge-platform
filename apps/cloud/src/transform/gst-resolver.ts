@@ -79,9 +79,7 @@ export function resolveGST(params: GSTResolverParams): GSTAnalysis {
     const partyState = parseStateName(voucher.placeOfSupply)
     // Overseas is always inter-state in ERPNext India Compliance (export supply)
     let isInterState =
-        gstCategory === 'Overseas'
-            ? true
-            : !!partyState && partyState.toLowerCase() !== companyState.toLowerCase()
+        gstCategory === 'Overseas' ? true : !!partyState && partyState.toLowerCase() !== companyState.toLowerCase()
 
     // ── Place of supply in ERPNext format ───────────────────────────────────
     // Overseas: no Indian state in placeOfSupply → use "96-Other Territory"
@@ -146,9 +144,7 @@ export function resolveGST(params: GSTResolverParams): GSTAnalysis {
         // ERPNext India Compliance rejects CGST/SGST accounts on inter-state invoices.
         // Merge all CGST+SGST lines into a single IGST line — total tax amount is preserved.
         const igstAccount =
-            config.gstLedgerMappings?.output_igst ||
-            config.gstLedgerMappings?.input_igst ||
-            'Output Tax IGST'
+            config.gstLedgerMappings?.output_igst || config.gstLedgerMappings?.input_igst || 'Output Tax IGST'
         const totalTax = taxLines.reduce((s, t) => s + t.tax_amount, 0)
         const totalRate = taxLines.reduce((s, t) => s + (t.rate ?? 0), 0)
         taxLines.length = 0

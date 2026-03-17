@@ -53,8 +53,8 @@ beforeEach(() => {
 describe('ensureCustomer', () => {
     it('creates a new customer when not found (404)', async () => {
         mockFetch
-            .mockReturnValueOnce(notFound())                          // GET Customer — not found
-            .mockReturnValueOnce(ok({ name: 'New Customer' }))        // POST Customer — created
+            .mockReturnValueOnce(notFound()) // GET Customer — not found
+            .mockReturnValueOnce(ok({ name: 'New Customer' })) // POST Customer — created
 
         await client.ensureCustomer('New Customer', '33AABCC1234D1ZA', 'Commercial')
 
@@ -67,9 +67,7 @@ describe('ensureCustomer', () => {
     })
 
     it('creates customer as Unregistered when no GSTIN', async () => {
-        mockFetch
-            .mockReturnValueOnce(notFound())
-            .mockReturnValueOnce(ok({ name: 'Walk-in Customer' }))
+        mockFetch.mockReturnValueOnce(notFound()).mockReturnValueOnce(ok({ name: 'Walk-in Customer' }))
 
         await client.ensureCustomer('Walk-in Customer')
 
@@ -80,7 +78,14 @@ describe('ensureCustomer', () => {
 
     it('updates GSTIN on existing customer that has none', async () => {
         mockFetch
-            .mockReturnValueOnce(ok({ name: 'ABC Corp', gstin: null, gst_category: 'Unregistered', customer_group: 'All Customer Groups' })) // GET
+            .mockReturnValueOnce(
+                ok({
+                    name: 'ABC Corp',
+                    gstin: null,
+                    gst_category: 'Unregistered',
+                    customer_group: 'All Customer Groups',
+                }),
+            ) // GET
             .mockReturnValueOnce(ok({ name: 'ABC Corp' })) // PUT update
 
         await client.ensureCustomer('ABC Corp', '29AABCC9999D1ZA')
@@ -94,7 +99,9 @@ describe('ensureCustomer', () => {
 
     it('updates customer_group when existing is default', async () => {
         mockFetch
-            .mockReturnValueOnce(ok({ name: 'XYZ Ltd', gstin: '33AABCC0000D1ZA', customer_group: 'All Customer Groups' }))
+            .mockReturnValueOnce(
+                ok({ name: 'XYZ Ltd', gstin: '33AABCC0000D1ZA', customer_group: 'All Customer Groups' }),
+            )
             .mockReturnValueOnce(ok({ name: 'XYZ Ltd' }))
 
         await client.ensureCustomer('XYZ Ltd', '33AABCC0000D1ZA', 'Commercial')
@@ -104,12 +111,14 @@ describe('ensureCustomer', () => {
     })
 
     it('does NOT update when customer already has GSTIN and specific group', async () => {
-        mockFetch.mockReturnValueOnce(ok({
-            name: 'Old Customer',
-            gstin: '33AABCC1111D1ZA',
-            gst_category: 'Registered Regular',
-            customer_group: 'Commercial',
-        }))
+        mockFetch.mockReturnValueOnce(
+            ok({
+                name: 'Old Customer',
+                gstin: '33AABCC1111D1ZA',
+                gst_category: 'Registered Regular',
+                customer_group: 'Commercial',
+            }),
+        )
 
         await client.ensureCustomer('Old Customer', '33AABCC1111D1ZA', 'Commercial')
 
@@ -137,9 +146,7 @@ describe('ensureCustomer', () => {
 
 describe('ensureSupplier', () => {
     it('creates a new supplier when not found', async () => {
-        mockFetch
-            .mockReturnValueOnce(notFound())
-            .mockReturnValueOnce(ok({ name: 'New Supplier' }))
+        mockFetch.mockReturnValueOnce(notFound()).mockReturnValueOnce(ok({ name: 'New Supplier' }))
 
         await client.ensureSupplier('New Supplier', '27AABCS5678E1ZB', 'Services')
 
@@ -151,9 +158,7 @@ describe('ensureSupplier', () => {
     })
 
     it('creates supplier as Unregistered when no GSTIN', async () => {
-        mockFetch
-            .mockReturnValueOnce(notFound())
-            .mockReturnValueOnce(ok({ name: 'Cash Supplier' }))
+        mockFetch.mockReturnValueOnce(notFound()).mockReturnValueOnce(ok({ name: 'Cash Supplier' }))
 
         await client.ensureSupplier('Cash Supplier')
 
@@ -173,11 +178,13 @@ describe('ensureSupplier', () => {
     })
 
     it('skips update when nothing changed', async () => {
-        mockFetch.mockReturnValueOnce(ok({
-            name: 'Stable Vendor',
-            gstin: '27AABCS9999F1ZD',
-            supplier_group: 'Services',
-        }))
+        mockFetch.mockReturnValueOnce(
+            ok({
+                name: 'Stable Vendor',
+                gstin: '27AABCS9999F1ZD',
+                supplier_group: 'Services',
+            }),
+        )
 
         await client.ensureSupplier('Stable Vendor', '27AABCS9999F1ZD', 'Services')
 
@@ -207,9 +214,7 @@ describe('ensureUOM', () => {
     })
 
     it('creates UOM when not found', async () => {
-        mockFetch
-            .mockReturnValueOnce(notFound())
-            .mockReturnValueOnce(ok({ uom_name: 'Litre' }))
+        mockFetch.mockReturnValueOnce(notFound()).mockReturnValueOnce(ok({ uom_name: 'Litre' }))
 
         await client.ensureUOM('Litre')
 
@@ -219,9 +224,7 @@ describe('ensureUOM', () => {
     })
 
     it('silently continues when UOM creation fails', async () => {
-        mockFetch
-            .mockReturnValueOnce(notFound())
-            .mockReturnValueOnce(serverError('Duplicate', 409))
+        mockFetch.mockReturnValueOnce(notFound()).mockReturnValueOnce(serverError('Duplicate', 409))
 
         await expect(client.ensureUOM('Bag')).resolves.toBeUndefined()
     })
@@ -248,9 +251,7 @@ describe('ensureItemGroup', () => {
     })
 
     it('creates group under All Item Groups when not found', async () => {
-        mockFetch
-            .mockReturnValueOnce(notFound())
-            .mockReturnValueOnce(ok({ item_group_name: 'Raw Material' }))
+        mockFetch.mockReturnValueOnce(notFound()).mockReturnValueOnce(ok({ item_group_name: 'Raw Material' }))
 
         await client.ensureItemGroup('Raw Material')
 
@@ -261,9 +262,7 @@ describe('ensureItemGroup', () => {
     })
 
     it('silently continues when group creation fails', async () => {
-        mockFetch
-            .mockReturnValueOnce(notFound())
-            .mockReturnValueOnce(serverError('Validation error', 422))
+        mockFetch.mockReturnValueOnce(notFound()).mockReturnValueOnce(serverError('Validation error', 422))
 
         await expect(client.ensureItemGroup('Broken Group')).resolves.toBeUndefined()
     })
@@ -274,10 +273,10 @@ describe('ensureItemGroup', () => {
 describe('ensureItem', () => {
     it('creates a new item with HSN, UOM, and group when not found', async () => {
         mockFetch
-            .mockReturnValueOnce(notFound())                          // GET Item
-            .mockReturnValueOnce(ok({ name: 'Widget A' }))            // POST Item
-            .mockReturnValueOnce(ok({ name: 'IP-001' }))              // POST Item Price (Selling)
-            .mockReturnValueOnce(ok({ name: 'IP-002' }))              // POST Item Price (Buying)
+            .mockReturnValueOnce(notFound()) // GET Item
+            .mockReturnValueOnce(ok({ name: 'Widget A' })) // POST Item
+            .mockReturnValueOnce(ok({ name: 'IP-001' })) // POST Item Price (Selling)
+            .mockReturnValueOnce(ok({ name: 'IP-002' })) // POST Item Price (Buying)
 
         await client.ensureItem('Widget A', 'Nos', '84719000', 'Products')
 
@@ -293,7 +292,8 @@ describe('ensureItem', () => {
         mockFetch
             .mockReturnValueOnce(notFound())
             .mockReturnValueOnce(ok({ name: 'Service Item' }))
-            .mockReturnValueOnce(ok({})).mockReturnValueOnce(ok({}))
+            .mockReturnValueOnce(ok({}))
+            .mockReturnValueOnce(ok({}))
 
         await client.ensureItem('Service Item', 'Nos', '', 'Services')
 
@@ -334,10 +334,11 @@ describe('ensureItem', () => {
 
     it('retries item creation with safe defaults if first attempt fails', async () => {
         mockFetch
-            .mockReturnValueOnce(notFound())                      // GET
+            .mockReturnValueOnce(notFound()) // GET
             .mockReturnValueOnce(serverError('Invalid group', 422)) // POST #1 — fails
-            .mockReturnValueOnce(ok({ name: 'Fallback Item' }))   // POST #2 — fallback
-            .mockReturnValueOnce(ok({})).mockReturnValueOnce(ok({})) // Item Prices
+            .mockReturnValueOnce(ok({ name: 'Fallback Item' })) // POST #2 — fallback
+            .mockReturnValueOnce(ok({}))
+            .mockReturnValueOnce(ok({})) // Item Prices
 
         await client.ensureItem('Fallback Item', 'Litre', '12345678', 'NonExistentGroup')
 
@@ -388,8 +389,8 @@ describe('ensurePartyAddress', () => {
 
     it('creates a new billing address when none exists', async () => {
         mockFetch
-            .mockReturnValueOnce(ok([]))                               // search — not found
-            .mockReturnValueOnce(ok({ name: 'XYZ Ltd-Billing' }))     // POST create
+            .mockReturnValueOnce(ok([])) // search — not found
+            .mockReturnValueOnce(ok({ name: 'XYZ Ltd-Billing' })) // POST create
 
         const result = await client.ensurePartyAddress('Customer', 'XYZ Ltd', {
             lines: ['Plot 5', 'Industrial Area', 'Coimbatore'],
@@ -410,9 +411,7 @@ describe('ensurePartyAddress', () => {
     })
 
     it('returns null silently on address creation failure', async () => {
-        mockFetch
-            .mockReturnValueOnce(ok([]))
-            .mockReturnValueOnce(serverError('Validation failed', 422))
+        mockFetch.mockReturnValueOnce(ok([])).mockReturnValueOnce(serverError('Validation failed', 422))
 
         const result = await client.ensurePartyAddress('Supplier', 'Bad Supplier', {
             lines: ['Some address'],
@@ -443,9 +442,7 @@ describe('ensurePartyContact', () => {
     })
 
     it('creates a new contact with email', async () => {
-        mockFetch
-            .mockReturnValueOnce(ok([]))
-            .mockReturnValueOnce(ok({ name: 'XYZ Ltd-Contact' }))
+        mockFetch.mockReturnValueOnce(ok([])).mockReturnValueOnce(ok({ name: 'XYZ Ltd-Contact' }))
 
         const result = await client.ensurePartyContact('Supplier', 'XYZ Ltd', {
             email: 'contact@xyz.com',
@@ -461,9 +458,7 @@ describe('ensurePartyContact', () => {
     })
 
     it('creates contact with phone when no mobile', async () => {
-        mockFetch
-            .mockReturnValueOnce(ok([]))
-            .mockReturnValueOnce(ok({ name: 'Phone Contact' }))
+        mockFetch.mockReturnValueOnce(ok([])).mockReturnValueOnce(ok({ name: 'Phone Contact' }))
 
         await client.ensurePartyContact('Customer', 'Phone Only', {
             phone: '044-12345678',
@@ -475,9 +470,7 @@ describe('ensurePartyContact', () => {
     })
 
     it('returns null silently on contact creation failure', async () => {
-        mockFetch
-            .mockReturnValueOnce(ok([]))
-            .mockReturnValueOnce(serverError('Error', 500))
+        mockFetch.mockReturnValueOnce(ok([])).mockReturnValueOnce(serverError('Error', 500))
 
         const result = await client.ensurePartyContact('Customer', 'Error Party', { email: 'x@y.com' })
         expect(result).toBeNull()
@@ -498,15 +491,15 @@ describe('ensureCompanyAddress', () => {
 
     it('creates company billing address with state derived from GSTIN code', async () => {
         mockFetch
-            .mockReturnValueOnce(ok([]))                                 // search
-            .mockReturnValueOnce(ok({ name: 'My Company-Billing' }))    // POST
+            .mockReturnValueOnce(ok([])) // search
+            .mockReturnValueOnce(ok({ name: 'My Company-Billing' })) // POST
 
         const name = await client.ensureCompanyAddress('My Company', '33AABCM1234Z1ZV')
 
         expect(name).toBe('My Company-Billing')
 
         const body = JSON.parse(mockFetch.mock.calls[1][1].body)
-        expect(body.state).toBe('Tamil Nadu')     // 33 = TN
+        expect(body.state).toBe('Tamil Nadu') // 33 = TN
         expect(body.city).toBe('Coimbatore')
         expect(body.gstin).toBe('33AABCM1234Z1ZV')
         expect(body.is_your_company_address).toBe(1)
@@ -514,9 +507,7 @@ describe('ensureCompanyAddress', () => {
     })
 
     it('derives Maharashtra address for GSTIN code 27', async () => {
-        mockFetch
-            .mockReturnValueOnce(ok([]))
-            .mockReturnValueOnce(ok({ name: 'MH Company-Billing' }))
+        mockFetch.mockReturnValueOnce(ok([])).mockReturnValueOnce(ok({ name: 'MH Company-Billing' }))
 
         await client.ensureCompanyAddress('MH Company', '27AABCM9999Z1ZV')
 
@@ -531,10 +522,10 @@ describe('ensureCompanyAddress', () => {
 describe('cancelAndAmend', () => {
     it('cancels, amends, updates and submits the amended doc', async () => {
         mockFetch
-            .mockReturnValueOnce(ok(null))                                    // POST cancel
-            .mockReturnValueOnce(ok({ name: 'SINV-001-1' }))                 // POST amend
-            .mockReturnValueOnce(ok({ name: 'SINV-001-1' }))                 // PUT update
-            .mockReturnValueOnce(ok(null))                                    // PUT submit
+            .mockReturnValueOnce(ok(null)) // POST cancel
+            .mockReturnValueOnce(ok({ name: 'SINV-001-1' })) // POST amend
+            .mockReturnValueOnce(ok({ name: 'SINV-001-1' })) // PUT update
+            .mockReturnValueOnce(ok(null)) // PUT submit
 
         const amendedName = await client.cancelAndAmend('Sales Invoice', 'SINV-001', { customer: 'New Customer' })
 
@@ -564,18 +555,14 @@ describe('cancelAndAmend', () => {
     it('throws if cancel fails', async () => {
         mockFetch.mockReturnValueOnce(serverError('Linked payment exists', 422))
 
-        await expect(
-            client.cancelAndAmend('Sales Invoice', 'SINV-001', {})
-        ).rejects.toBeInstanceOf(ERPNextError)
+        await expect(client.cancelAndAmend('Sales Invoice', 'SINV-001', {})).rejects.toBeInstanceOf(ERPNextError)
     })
 
     it('throws if amend fails', async () => {
         mockFetch
-            .mockReturnValueOnce(ok(null))                     // cancel OK
-            .mockReturnValueOnce(serverError('Amend error'))   // amend fails
+            .mockReturnValueOnce(ok(null)) // cancel OK
+            .mockReturnValueOnce(serverError('Amend error')) // amend fails
 
-        await expect(
-            client.cancelAndAmend('Sales Invoice', 'SINV-001', {})
-        ).rejects.toBeInstanceOf(ERPNextError)
+        await expect(client.cancelAndAmend('Sales Invoice', 'SINV-001', {})).rejects.toBeInstanceOf(ERPNextError)
     })
 })

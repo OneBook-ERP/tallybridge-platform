@@ -49,7 +49,13 @@ describe('erpJournalToTally', () => {
     it('accounts with party have isPartyLedger=true', () => {
         const doc = makeERPNextJournalEntry({
             accounts: [
-                { account: 'Debtors - TC', debit_in_account_currency: 5000, credit_in_account_currency: 0, party_type: 'Customer', party: 'Customer ABC' },
+                {
+                    account: 'Debtors - TC',
+                    debit_in_account_currency: 5000,
+                    credit_in_account_currency: 0,
+                    party_type: 'Customer',
+                    party: 'Customer ABC',
+                },
                 { account: 'Sales - TC', debit_in_account_currency: 0, credit_in_account_currency: 5000 },
             ],
         })

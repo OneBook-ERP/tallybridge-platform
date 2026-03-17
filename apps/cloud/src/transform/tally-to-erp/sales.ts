@@ -137,15 +137,11 @@ export function transformSales(voucher: TallyVoucher, config: CompanyConfig): Tr
     const hasForeignCurrency = !!voucher.foreignCurrency && voucher.foreignCurrency !== 'INR'
     const computedCurrency = hasForeignCurrency ? voucher.foreignCurrency : (config.currency ?? 'INR')
     const computedConversionRate =
-        hasForeignCurrency && voucher.foreignAmount && grandTotal
-            ? roundInr(voucher.foreignAmount / grandTotal)
-            : 1
+        hasForeignCurrency && voucher.foreignAmount && grandTotal ? roundInr(voucher.foreignAmount / grandTotal) : 1
 
     // Address: join address lines from voucher (populated by engine from ledger_masters raw_data)
     const customerAddressStr =
-        Array.isArray(voucher.address) && voucher.address.length > 0
-            ? voucher.address.join('\n')
-            : undefined
+        Array.isArray(voucher.address) && voucher.address.length > 0 ? voucher.address.join('\n') : undefined
 
     // IRN and e-Way Bill fields (irnNo/irn both handled; normalizer maps both)
     const irnValue = voucher.irn || voucher.irnNo || undefined

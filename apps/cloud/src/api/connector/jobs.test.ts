@@ -5,7 +5,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import Fastify, { type FastifyInstance } from 'fastify'
 
 const { mockSql } = vi.hoisted(() => {
-    const mockSql = Object.assign(vi.fn(() => Promise.resolve([])), { json: (v: unknown) => v })
+    const mockSql = Object.assign(
+        vi.fn(() => Promise.resolve([])),
+        { json: (v: unknown) => v },
+    )
     return { mockSql }
 })
 
@@ -39,9 +42,7 @@ afterEach(() => app.close())
 
 describe('GET /connector/jobs/pending', () => {
     it('returns existing PENDING jobs immediately', async () => {
-        mockSql.mockResolvedValueOnce([
-            { id: 'job-1', job_type: 'CREATE', payload: { voucherType: 'Sales' } },
-        ])
+        mockSql.mockResolvedValueOnce([{ id: 'job-1', job_type: 'CREATE', payload: { voucherType: 'Sales' } }])
 
         const res = await app.inject({
             method: 'GET',
@@ -80,9 +81,7 @@ describe('GET /connector/jobs/pending', () => {
 
         await new Promise((r) => setTimeout(r, 50))
 
-        wakeConnector(CID, [
-            { jobId: 'wake-1', action: 'CREATE', voucherType: 'Sales', payload: {} },
-        ])
+        wakeConnector(CID, [{ jobId: 'wake-1', action: 'CREATE', voucherType: 'Sales', payload: {} }])
 
         const res = await resPromise
         expect(res.statusCode).toBe(200)
@@ -92,7 +91,9 @@ describe('GET /connector/jobs/pending', () => {
     })
 
     it('wakeConnector for unknown company is no-op', () => {
-        expect(() => wakeConnector('unknown-co', [{ jobId: 'j', action: 'CREATE', voucherType: 'X', payload: {} }])).not.toThrow()
+        expect(() =>
+            wakeConnector('unknown-co', [{ jobId: 'j', action: 'CREATE', voucherType: 'X', payload: {} }]),
+        ).not.toThrow()
     })
 
     it('token mismatch → 403', async () => {

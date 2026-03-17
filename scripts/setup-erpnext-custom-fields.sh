@@ -34,12 +34,21 @@ for DT in "${DOCTYPES[@]}"; do
             \"insert_after\": \"naming_series\",
             \"read_only\": 1,
             \"unique\": 1,
-            \"no_copy\": 1
+            \"no_copy\": 1,
+            \"in_filter\": 1,
+            \"search_index\": 1
         }" 2>&1)
     if echo "$RESP" | grep -q '"name"'; then
         echo "OK"
     elif echo "$RESP" | grep -q 'DuplicateEntryError\|already exists'; then
-        echo "SKIP (exists)"
+        # Field exists — patch in_filter and search_index
+        DT_SAFE=$(echo "$DT" | sed 's/ /%20/g')
+        FNAME="${DT}-custom_tally_guid"
+        FNAME_ENC=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${FNAME}'))")
+        curl -s -X PUT "${ERPNEXT_URL}/api/resource/Custom%20Field/${FNAME_ENC}" \
+            -H "$AUTH" -H "Content-Type: application/json" \
+            -d "{\"in_filter\": 1, \"search_index\": 1}" > /dev/null 2>&1
+        echo "UPDATED (in_filter)"
     else
         echo "ERROR: $(echo "$RESP" | head -c 100)"
     fi

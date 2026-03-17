@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import { transformSales } from './sales'
-import { makeConfig, makeSalesVoucher, makeInterStateVoucher, makeLedgerEntry, makeInventoryEntry } from '../../test/fixtures'
+import {
+    makeConfig,
+    makeSalesVoucher,
+    makeInterStateVoucher,
+    makeLedgerEntry,
+    makeInventoryEntry,
+} from '../../test/fixtures'
 
 describe('transformSales', () => {
     const config = makeConfig()
@@ -253,7 +259,12 @@ describe('transformSales', () => {
         const voucher = makeSalesVoucher({
             inventoryEntries: [],
             ledgerEntries: [
-                makeLedgerEntry({ ledgerName: 'ANU POLYMERS', isPartyLedger: true, isDeemedPositive: true, amount: 23600 }),
+                makeLedgerEntry({
+                    ledgerName: 'ANU POLYMERS',
+                    isPartyLedger: true,
+                    isDeemedPositive: true,
+                    amount: 23600,
+                }),
                 makeLedgerEntry({ ledgerName: 'B2B SALES', amount: -10000 }),
                 makeLedgerEntry({ ledgerName: 'Consulting Income', amount: -10000 }),
                 makeLedgerEntry({ ledgerName: 'OUTPUT CGST', amount: -1800 }),
@@ -276,9 +287,7 @@ describe('transformSales', () => {
     it('detects credit note from all-negative inventory quantities', () => {
         const voucher = makeSalesVoucher({
             voucherTypeName: 'Sales', // not "Credit Note" by name
-            inventoryEntries: [
-                makeInventoryEntry({ billedQty: -5, actualQty: -5, amount: -500 }),
-            ],
+            inventoryEntries: [makeInventoryEntry({ billedQty: -5, actualQty: -5, amount: -500 })],
         })
         const result = transformSales(voucher, config)
 
@@ -291,7 +300,12 @@ describe('transformSales', () => {
     it('zero GST — empty taxes array when no GST ledgers', () => {
         const voucher = makeSalesVoucher({
             ledgerEntries: [
-                makeLedgerEntry({ ledgerName: 'ANU POLYMERS', isPartyLedger: true, isDeemedPositive: true, amount: 10000 }),
+                makeLedgerEntry({
+                    ledgerName: 'ANU POLYMERS',
+                    isPartyLedger: true,
+                    isDeemedPositive: true,
+                    amount: 10000,
+                }),
                 makeLedgerEntry({ ledgerName: 'B2B SALES', amount: -10000 }),
             ],
         })
@@ -307,8 +321,24 @@ describe('transformSales', () => {
     it('multi-item inventory with different HSN codes', () => {
         const voucher = makeSalesVoucher({
             inventoryEntries: [
-                makeInventoryEntry({ stockItemName: 'Item A', hsnCode: '84719000', amount: 500, qty: 5, billedQty: 5, actualQty: 5, rate: 100 }),
-                makeInventoryEntry({ stockItemName: 'Item B', hsnCode: '90211000', amount: 300, qty: 3, billedQty: 3, actualQty: 3, rate: 100 }),
+                makeInventoryEntry({
+                    stockItemName: 'Item A',
+                    hsnCode: '84719000',
+                    amount: 500,
+                    qty: 5,
+                    billedQty: 5,
+                    actualQty: 5,
+                    rate: 100,
+                }),
+                makeInventoryEntry({
+                    stockItemName: 'Item B',
+                    hsnCode: '90211000',
+                    amount: 300,
+                    qty: 3,
+                    billedQty: 3,
+                    actualQty: 3,
+                    rate: 100,
+                }),
             ],
         })
         const result = transformSales(voucher, config)
@@ -325,7 +355,12 @@ describe('transformSales', () => {
             placeOfSupply: 'Overseas',
             partyGSTIN: '',
             ledgerEntries: [
-                makeLedgerEntry({ ledgerName: 'ANU POLYMERS', isPartyLedger: true, isDeemedPositive: true, amount: 10000 }),
+                makeLedgerEntry({
+                    ledgerName: 'ANU POLYMERS',
+                    isPartyLedger: true,
+                    isDeemedPositive: true,
+                    amount: 10000,
+                }),
                 makeLedgerEntry({ ledgerName: 'B2B SALES', amount: -10000 }),
             ],
         })
@@ -556,7 +591,12 @@ describe('transformSales', () => {
             inventoryEntries: [], // no inventory entries to trigger qty fallback
             ledgerEntries: [
                 // Customer Cr (negative) = return scenario
-                makeLedgerEntry({ ledgerName: 'ANU POLYMERS', isPartyLedger: true, isDeemedPositive: false, amount: -10000 }),
+                makeLedgerEntry({
+                    ledgerName: 'ANU POLYMERS',
+                    isPartyLedger: true,
+                    isDeemedPositive: false,
+                    amount: -10000,
+                }),
                 makeLedgerEntry({ ledgerName: 'B2B SALES', amount: 10000 }),
             ],
         })

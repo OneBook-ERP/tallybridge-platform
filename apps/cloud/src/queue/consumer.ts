@@ -253,11 +253,7 @@ async function processMasterData(
                         await erpClient.ensureSupplier(name, gstin || undefined, group || undefined)
                     } else if (ledgerType === 'Bank' || ledgerType === 'Cash') {
                         // Auto-create GL account in ERPNext COA and persist the mapping
-                        const erpAccountName = await erpClient.ensureBankGLAccount(
-                            name,
-                            config.erpnextCompany,
-                            abbr,
-                        )
+                        const erpAccountName = await erpClient.ensureBankGLAccount(name, config.erpnextCompany, abbr)
                         // Persist mapping to config_profiles so voucher processing can resolve it
                         await sql`
                             UPDATE config_profiles
@@ -327,9 +323,10 @@ async function processMasterData(
                 const name = (raw.Name ?? raw.name ?? raw.NAME ?? '') as string
                 if (!name) continue
                 const abbr = config.erpnextAbbr ?? 'CPT'
-                const defaultWarehouse = name.toLowerCase() === 'main location'
-                    ? (config.defaultWarehouse ?? `Stores - ${abbr}`)
-                    : `${name} - ${abbr}`
+                const defaultWarehouse =
+                    name.toLowerCase() === 'main location'
+                        ? (config.defaultWarehouse ?? `Stores - ${abbr}`)
+                        : `${name} - ${abbr}`
                 try {
                     await sql`
                         INSERT INTO godown_warehouse_mapping (company_id, tally_godown, erpnext_warehouse)
@@ -351,7 +348,9 @@ async function processMasterData(
     // After stock items are synced, create a one-time opening stock entry in ERPNext.
     // This sets initial inventory levels so purchase invoices don't cause negative stock.
     if (type === 'stockItem') {
-        const openingRows = await sql<{ tally_name: string; opening_qty: number; opening_value: number; uom: string | null }[]>`
+        const openingRows = await sql<
+            { tally_name: string; opening_qty: number; opening_value: number; uom: string | null }[]
+        >`
             SELECT tally_name, opening_qty, opening_value, uom
             FROM stock_item_masters
             WHERE company_id = ${companyId} AND opening_qty > 0

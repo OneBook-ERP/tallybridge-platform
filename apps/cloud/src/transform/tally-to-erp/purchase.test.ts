@@ -165,7 +165,12 @@ describe('transformPurchase', () => {
             placeOfSupply: 'Maharashtra',
             partyGSTIN: '27AABCS5678E1ZB',
             ledgerEntries: [
-                makeLedgerEntry({ ledgerName: 'Supplier XYZ', isPartyLedger: true, isDeemedPositive: false, amount: -11800 }),
+                makeLedgerEntry({
+                    ledgerName: 'Supplier XYZ',
+                    isPartyLedger: true,
+                    isDeemedPositive: false,
+                    amount: -11800,
+                }),
                 makeLedgerEntry({ ledgerName: 'B2B PURCHASE', isDeemedPositive: true, amount: 10000 }),
                 makeLedgerEntry({ ledgerName: 'Input IGST 18%', isDeemedPositive: true, amount: 1800 }),
             ],
@@ -182,7 +187,12 @@ describe('transformPurchase', () => {
         const voucher = makePurchaseVoucher({
             inventoryEntries: [],
             ledgerEntries: [
-                makeLedgerEntry({ ledgerName: 'Supplier XYZ', isPartyLedger: true, isDeemedPositive: false, amount: -20000 }),
+                makeLedgerEntry({
+                    ledgerName: 'Supplier XYZ',
+                    isPartyLedger: true,
+                    isDeemedPositive: false,
+                    amount: -20000,
+                }),
                 makeLedgerEntry({ ledgerName: 'B2B PURCHASE', isDeemedPositive: true, amount: 10000 }),
                 makeLedgerEntry({ ledgerName: 'Freight Charges', isDeemedPositive: true, amount: 10000 }),
             ],

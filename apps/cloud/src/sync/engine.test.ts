@@ -18,44 +18,39 @@ import type { CompanyConfig } from '../types'
 
 // ── Hoisted mocks (available to vi.mock factories) ─────────────────────────────
 
-const { mockSql, mockIsOwnWrite, mockCheckConflict, mockRecordConflict, mockErpClient } =
-    vi.hoisted(() => {
-        const mockSql = Object.assign(
-            vi.fn((_strings: TemplateStringsArray, ..._values: unknown[]) =>
-                Promise.resolve([]),
-            ),
-            { json: (val: unknown) => val },
-        )
-        const mockIsOwnWrite = vi.fn(() => Promise.resolve(false))
-        const mockCheckConflict = vi.fn(() => Promise.resolve({ hasConflict: false }))
-        const mockRecordConflict = vi.fn(() => Promise.resolve())
-        const mockErpClient = {
-            getDoc: vi.fn(),
-            listDocs: vi.fn(() => Promise.resolve([])),
-            findByTallyGUID: vi.fn(() => Promise.resolve(null)),
-            createDoc: vi.fn((_dt: string, _doc: Record<string, unknown>) =>
-                Promise.resolve({ name: 'SINV-00001' }),
-            ),
-            updateDoc: vi.fn(),
-            cancelAndAmend: vi.fn(() => Promise.resolve('SINV-00001-1')),
-            submitDoc: vi.fn(),
-            deleteDoc: vi.fn(),
-            ensureCustomer: vi.fn(),
-            ensureSupplier: vi.fn(),
-            ensureUOM: vi.fn(),
-            ensureItemGroup: vi.fn(),
-            ensureItem: vi.fn(),
-            ensureCompanyAddress: vi.fn(),
-            ensurePartyAddress: vi.fn(),
-            ensurePartyContact: vi.fn(),
-            ensureBankGLAccount: vi.fn(),
-            ensureGLAccount: vi.fn(() => Promise.resolve('New Account - TC')),
-            ensureOpeningStockEntry: vi.fn(),
-            patchSyncStatus: vi.fn(),
-            countDocs: vi.fn(),
-        }
-        return { mockSql, mockIsOwnWrite, mockCheckConflict, mockRecordConflict, mockErpClient }
-    })
+const { mockSql, mockIsOwnWrite, mockCheckConflict, mockRecordConflict, mockErpClient } = vi.hoisted(() => {
+    const mockSql = Object.assign(
+        vi.fn((_strings: TemplateStringsArray, ..._values: unknown[]) => Promise.resolve([])),
+        { json: (val: unknown) => val },
+    )
+    const mockIsOwnWrite = vi.fn(() => Promise.resolve(false))
+    const mockCheckConflict = vi.fn(() => Promise.resolve({ hasConflict: false }))
+    const mockRecordConflict = vi.fn(() => Promise.resolve())
+    const mockErpClient = {
+        getDoc: vi.fn(),
+        listDocs: vi.fn(() => Promise.resolve([])),
+        findByTallyGUID: vi.fn(() => Promise.resolve(null)),
+        createDoc: vi.fn((_dt: string, _doc: Record<string, unknown>) => Promise.resolve({ name: 'SINV-00001' })),
+        updateDoc: vi.fn(),
+        cancelAndAmend: vi.fn(() => Promise.resolve('SINV-00001-1')),
+        submitDoc: vi.fn(),
+        deleteDoc: vi.fn(),
+        ensureCustomer: vi.fn(),
+        ensureSupplier: vi.fn(),
+        ensureUOM: vi.fn(),
+        ensureItemGroup: vi.fn(),
+        ensureItem: vi.fn(),
+        ensureCompanyAddress: vi.fn(),
+        ensurePartyAddress: vi.fn(),
+        ensurePartyContact: vi.fn(),
+        ensureBankGLAccount: vi.fn(),
+        ensureGLAccount: vi.fn(() => Promise.resolve('New Account - TC')),
+        ensureOpeningStockEntry: vi.fn(),
+        patchSyncStatus: vi.fn(),
+        countDocs: vi.fn(),
+    }
+    return { mockSql, mockIsOwnWrite, mockCheckConflict, mockRecordConflict, mockErpClient }
+})
 
 vi.mock('../db/db', () => {
     const fn = (...args: unknown[]) => mockSql(...args)
@@ -345,11 +340,7 @@ describe('processTallyVoucher — transform errors', () => {
         const result = await processTallyVoucher(voucher, config())
 
         // The auto-heal should fire: ensureGLAccount is called for the unmapped ledger
-        expect(mockErpClient.ensureGLAccount).toHaveBeenCalledWith(
-            'Office Rent',
-            'Test Company',
-            expect.any(String),
-        )
+        expect(mockErpClient.ensureGLAccount).toHaveBeenCalledWith('Office Rent', 'Test Company', expect.any(String))
         // After auto-heal, the mapping is updated and transform retries
         expect(result.status).toBe('synced')
     })
@@ -405,25 +396,17 @@ describe('processTallyVoucher — transform errors', () => {
 
 describe('processTallyVoucher — master data', () => {
     it('creates customer with group from ledger_masters', async () => {
-        sqlReturns([
-            { pattern: /ledger_masters/, rows: [{ tally_group: 'Retail Customers' }] },
-        ])
+        sqlReturns([{ pattern: /ledger_masters/, rows: [{ tally_group: 'Retail Customers' }] }])
 
         const voucher = makeSalesVoucher()
         await processTallyVoucher(voucher, config())
 
-        expect(mockErpClient.ensureCustomer).toHaveBeenCalledWith(
-            'ANU POLYMERS',
-            '33AAUFA2081K1Z9',
-            'Retail Customers',
-        )
+        expect(mockErpClient.ensureCustomer).toHaveBeenCalledWith('ANU POLYMERS', '33AAUFA2081K1Z9', 'Retail Customers')
     })
 
     it('skips customer creation for accounting ledgers (bank/cash)', async () => {
         // Simulate a sales invoice where party is a bank ledger
-        sqlReturns([
-            { pattern: /ledger_masters/, rows: [{ tally_group: 'Bank Accounts' }] },
-        ])
+        sqlReturns([{ pattern: /ledger_masters/, rows: [{ tally_group: 'Bank Accounts' }] }])
 
         const voucher = makeSalesVoucher({
             partyLedgerName: 'HDFC BANK',
@@ -470,9 +453,7 @@ describe('processTallyVoucher — master data', () => {
     })
 
     it('creates supplier with group for Purchase Invoice', async () => {
-        sqlReturns([
-            { pattern: /ledger_masters/, rows: [{ tally_group: 'Raw Material Suppliers' }] },
-        ])
+        sqlReturns([{ pattern: /ledger_masters/, rows: [{ tally_group: 'Raw Material Suppliers' }] }])
 
         mockErpClient.createDoc.mockResolvedValue({ name: 'PINV-00001' })
         const voucher = makePurchaseVoucher()
@@ -541,20 +522,13 @@ describe('processTallyVoucher — master data', () => {
         })
 
         // stock_item_masters returns a parent group
-        sqlReturns([
-            { pattern: /stock_item_masters/, rows: [{ tally_parent: 'Polymers' }] },
-        ])
+        sqlReturns([{ pattern: /stock_item_masters/, rows: [{ tally_parent: 'Polymers' }] }])
 
         await processTallyVoucher(voucher, config())
 
         expect(mockErpClient.ensureUOM).toHaveBeenCalledWith('KGS')
         expect(mockErpClient.ensureItemGroup).toHaveBeenCalledWith('Polymers')
-        expect(mockErpClient.ensureItem).toHaveBeenCalledWith(
-            'Custom Widget',
-            'KGS',
-            '39269099',
-            'Polymers',
-        )
+        expect(mockErpClient.ensureItem).toHaveBeenCalledWith('Custom Widget', 'KGS', '39269099', 'Polymers')
     })
 
     it('records exception when master data creation fails', async () => {
@@ -584,9 +558,7 @@ describe('processTallyVoucher — payment references', () => {
                     isPartyLedger: true,
                     isDeemedPositive: true,
                     amount: 11800,
-                    billAllocations: [
-                        { name: 'PI-001', billType: 'Agst Ref', amount: 11800, dueDate: '20240501' },
-                    ],
+                    billAllocations: [{ name: 'PI-001', billType: 'Agst Ref', amount: 11800, dueDate: '20240501' }],
                     bankAllocations: [],
                 },
                 {
@@ -630,9 +602,7 @@ describe('processTallyVoucher — payment references', () => {
                     isPartyLedger: true,
                     isDeemedPositive: false,
                     amount: -5000,
-                    billAllocations: [
-                        { name: 'INV-OLD', billType: 'Agst Ref', amount: -5000, dueDate: '20240501' },
-                    ],
+                    billAllocations: [{ name: 'INV-OLD', billType: 'Agst Ref', amount: -5000, dueDate: '20240501' }],
                     bankAllocations: [],
                 },
                 {
@@ -663,9 +633,7 @@ describe('processTallyVoucher — payment references', () => {
         // Should have called listDocs for outstanding Sales Invoices
         expect(mockErpClient.listDocs).toHaveBeenCalledWith(
             'Sales Invoice',
-            expect.arrayContaining([
-                ['customer', '=', 'ANU POLYMERS'],
-            ]),
+            expect.arrayContaining([['customer', '=', 'ANU POLYMERS']]),
             expect.any(Array),
             'posting_date asc',
             20,

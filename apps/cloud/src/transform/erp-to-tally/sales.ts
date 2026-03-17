@@ -33,8 +33,8 @@ export interface TallyLedgerEntryInput {
 }
 
 export interface TallyCostCentreAllocationInput {
-    name: string    // cost centre name (Tally name, without ABBR suffix)
-    amount: number  // positive amount
+    name: string // cost centre name (Tally name, without ABBR suffix)
+    amount: number // positive amount
 }
 
 export interface TallyBillAllocationInput {

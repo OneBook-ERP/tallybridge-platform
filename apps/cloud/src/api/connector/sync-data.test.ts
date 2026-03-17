@@ -62,9 +62,7 @@ describe('POST /connector/sync-data', () => {
         })
 
         expect(res.statusCode).toBe(200)
-        expect(mockEnqueueSyncBatch).toHaveBeenCalledWith(
-            expect.objectContaining({ recordType: 'voucher' }),
-        )
+        expect(mockEnqueueSyncBatch).toHaveBeenCalledWith(expect.objectContaining({ recordType: 'voucher' }))
     })
 
     it('ledgers → recordType: ledger (priority)', async () => {
@@ -75,9 +73,7 @@ describe('POST /connector/sync-data', () => {
             headers: { authorization: 'Bearer t' },
         })
 
-        expect(mockEnqueueSyncBatch).toHaveBeenCalledWith(
-            expect.objectContaining({ recordType: 'ledger' }),
-        )
+        expect(mockEnqueueSyncBatch).toHaveBeenCalledWith(expect.objectContaining({ recordType: 'ledger' }))
     })
 
     it('stockItems → recordType: stockItem', async () => {
@@ -88,9 +84,7 @@ describe('POST /connector/sync-data', () => {
             headers: { authorization: 'Bearer t' },
         })
 
-        expect(mockEnqueueSyncBatch).toHaveBeenCalledWith(
-            expect.objectContaining({ recordType: 'stockItem' }),
-        )
+        expect(mockEnqueueSyncBatch).toHaveBeenCalledWith(expect.objectContaining({ recordType: 'stockItem' }))
     })
 
     it('returns valid UUID as batchId', async () => {
