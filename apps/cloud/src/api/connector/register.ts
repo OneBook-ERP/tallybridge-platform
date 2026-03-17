@@ -18,8 +18,6 @@ const RegisterBodySchema = z.object({
     tallyVersion: z.string().optional(),
     osInfo: z.string().optional(),
     companyName: z.string().min(1),
-    // Optional mapping configs pushed from the connector's local SQLite
-    mappingConfigs: z.record(z.unknown()).optional(),
 })
 
 export const registerRoute: FastifyPluginAsync = async (fastify) => {
@@ -42,38 +40,24 @@ export const registerRoute: FastifyPluginAsync = async (fastify) => {
         async (request, reply) => {
             const body = RegisterBodySchema.parse(request.body)
 
-            // Upsert by machine_id so re-registrations don't create duplicate rows.
-            // The unique index is partial (WHERE machine_id IS NOT NULL) so the
-            // conflict target must include the predicate.
+            // Upsert by (machine_id, tally_company_name) so the same machine can
+            // register multiple Tally companies as separate rows, and re-registrations
+            // for the same company just refresh the status without touching config.
             const [company] = await sql<{ id: string }[]>`
         INSERT INTO companies (tally_company_name, tally_version, connector_status, machine_id)
         VALUES (${body.companyName}, ${body.tallyVersion ?? null}, 'ONLINE', ${body.machineId})
-        ON CONFLICT (machine_id) WHERE machine_id IS NOT NULL DO UPDATE
-          SET tally_company_name = EXCLUDED.tally_company_name,
-              connector_status   = 'ONLINE',
-              tally_version      = EXCLUDED.tally_version
+        ON CONFLICT (machine_id, tally_company_name) WHERE machine_id IS NOT NULL DO UPDATE
+          SET connector_status = 'ONLINE',
+              tally_version    = EXCLUDED.tally_version
         RETURNING id
       `
             const companyId = company!.id
 
-            // Seed / update config_profile with mapping configs from connector.
-            // Pass raw objects (not JSON.stringify'd) to avoid JSONB double-encoding.
-            const mc = body.mappingConfigs ?? {}
-            const acctMap = (mc.account_coa as Record<string, unknown>) ?? {}
-            const gstMap = (mc.gst_ledger as Record<string, unknown>) ?? {}
-            const vtMap = (mc.voucher_type as Record<string, unknown>) ?? {}
-            const sdMap = (mc.sync_direction as Record<string, unknown>) ?? {}
-
+            // Seed an empty config_profiles row for new companies only.
+            // Never overwrite existing config — cloud is the source of truth.
             await sql`
-          INSERT INTO config_profiles (
-              company_id,
-              account_mappings, gst_ledger_mappings, voucher_type_mappings,
-              sync_direction_rules
-          )
-          VALUES (
-              ${companyId},
-              ${sql.json(acctMap as never)}, ${sql.json(gstMap as never)}, ${sql.json(vtMap as never)}, ${sql.json(sdMap as never)}
-          )
+          INSERT INTO config_profiles (company_id)
+          VALUES (${companyId})
           ON CONFLICT (company_id) DO NOTHING
         `
 

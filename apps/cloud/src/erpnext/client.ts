@@ -370,7 +370,7 @@ export class ERPNextClient {
         // Derive state from GSTIN code if not provided
         const stateCode = gstin.slice(0, 2)
         const stateMap: Record<string, { state: string; city: string }> = {
-            '33': { state: 'Tamil Nadu', city: 'Coimbatore' },
+            '33': { state: 'Tamil Nadu', city: 'Chennai' },
             '27': { state: 'Maharashtra', city: 'Mumbai' },
             '29': { state: 'Karnataka', city: 'Bengaluru' },
             '07': { state: 'Delhi', city: 'New Delhi' },

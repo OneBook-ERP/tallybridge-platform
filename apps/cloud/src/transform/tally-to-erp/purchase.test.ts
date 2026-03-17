@@ -145,11 +145,11 @@ describe('transformPurchase', () => {
         expect(result.doc.is_rcm_applicable).toBe(1)
     })
 
-    it('detects debit note from all-negative inventory quantities', () => {
+    it('detects debit note from all-positive inventory quantities (outward = return in Tally)', () => {
         const voucher = makePurchaseVoucher({
             voucherTypeName: 'Purchase', // not "Debit Note" by name
             inventoryEntries: [
-                makeInventoryEntry({ billedQty: -3, actualQty: -3, amount: -300, accountLedgerName: 'B2B PURCHASE' }),
+                makeInventoryEntry({ billedQty: 3, actualQty: 3, amount: 300, accountLedgerName: 'B2B PURCHASE' }),
             ],
         })
         const result = transformPurchase(voucher, config)
@@ -158,6 +158,21 @@ describe('transformPurchase', () => {
         if (!result.success) return
         expect(result.doc.is_return).toBe(1)
         expect(result.doc.items[0].qty).toBeLessThan(0)
+    })
+
+    it('normal purchase with negative inventory quantities is NOT a return', () => {
+        const voucher = makePurchaseVoucher({
+            voucherTypeName: 'Purchase',
+            inventoryEntries: [
+                makeInventoryEntry({ billedQty: -3, actualQty: -3, amount: -300, accountLedgerName: 'B2B PURCHASE' }),
+            ],
+        })
+        const result = transformPurchase(voucher, config)
+
+        expect(result.success).toBe(true)
+        if (!result.success) return
+        expect(result.doc.is_return).toBe(0)
+        expect(result.doc.items[0].qty).toBeGreaterThan(0)
     })
 
     it('inter-state purchase sets is_inter_state = 1', () => {

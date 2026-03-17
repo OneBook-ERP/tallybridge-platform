@@ -126,7 +126,7 @@ export async function processTallyVoucher(voucher: TallyVoucher, config: ConfigW
             vtLower.includes('journal') || vtLower.includes('contra') || vtLower.includes('debit note')
         if (isJournalLike && unmappedLedger && unmappedLedger !== 'partyGSTIN') {
             try {
-                const abbr = config.erpnextAbbr ?? 'CPT'
+                const abbr = config.erpnextAbbr ?? ''
                 const erpAccount = await erpClient.ensureGLAccount(unmappedLedger, config.erpnextCompany, abbr)
                 config.accountMappings[unmappedLedger] = erpAccount
                 await sql`

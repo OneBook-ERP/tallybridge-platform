@@ -68,7 +68,21 @@ export function resolveAccount(
         return resolveAsParty(config, opts?.partyDirection)
     }
 
-    // 5. Aggressive party detection — if the ledger name doesn't contain
+    // 5. Group-based default resolution.
+    //    If ledger_masters has the group for this ledger AND groupDefaultMappings has a
+    //    pattern for that group, use it. This handles Sales Accounts → "Sales - ABBR",
+    //    Indirect Expenses → "Indirect Expenses - ABBR", etc. without manual mapping.
+    const ledgerGroup = config.ledgerGroups?.[tallyLedger]
+    if (ledgerGroup) {
+        // Party groups resolve directly — no account lookup needed
+        if (ledgerGroup === 'Sundry Debtors') return resolveAsParty(config, 'debtor')
+        if (ledgerGroup === 'Sundry Creditors') return resolveAsParty(config, 'creditor')
+
+        const groupAccount = config.groupDefaultMappings?.[ledgerGroup]
+        if (groupAccount) return { account: groupAccount, isRoundOff: false, isGST: false }
+    }
+
+    // 6. Aggressive party detection — if the ledger name doesn't contain
     //    expense/income/tax keywords, it's almost certainly a customer/supplier
     //    party name (Tally often doesn't set ISPARTYLEDGER on journal entries).
     //    Exception: if this ledger is known to be a bank/cash account (from
@@ -85,7 +99,7 @@ export function resolveAccount(
         return resolveAsParty(config, opts?.partyDirection)
     }
 
-    // 6. Unmapped — Tier 3 exception
+    // 7. Unmapped — Tier 3 exception
     return {
         code: 'UNMAPPED_LEDGER',
         message: `Tally ledger "${tallyLedger}" has no ERPNext account mapping. Add it to account_mappings in config.`,

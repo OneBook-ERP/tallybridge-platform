@@ -18,6 +18,7 @@ interface DataRow {
     doctype: string
     tallySynced: number
     erpnextCount: number
+    tallyCount?: number
 }
 
 interface DataComparison {
@@ -25,6 +26,8 @@ interface DataComparison {
     exceptions: Record<string, number>
     totalTallySynced: number
     totalErpNext: number
+    tallyCountsRaw?: Record<string, number> | null
+    tallyCountsUpdatedAt?: string | null
 }
 
 interface SyncRecord {
@@ -57,6 +60,804 @@ interface WsMessage {
     data: Record<string, unknown>
 }
 
+interface ConfigProfile {
+    abbr: string
+    accountMappings: Record<string, string>
+    gstLedgerMappings: Record<string, string>
+    voucherTypeMappings: Record<string, string>
+    godownWarehouseMappings: Record<string, string>
+    groupDefaultMappings: Record<string, string>
+}
+
+// Root-type classification for Tally groups — mirrors default-mappings.ts on the backend.
+const TALLY_GROUP_ROOT_TYPE: Record<string, 'Asset' | 'Liability' | 'Income' | 'Expense'> = {
+    'Sundry Debtors': 'Asset', 'Bank Accounts': 'Asset', 'Cash-in-Hand': 'Asset',
+    'Loans & Advances (Asset)': 'Asset', 'Fixed Assets': 'Asset', 'Current Assets': 'Asset',
+    'Stock-in-Hand': 'Asset', 'Investments': 'Asset',
+    'Sundry Creditors': 'Liability', 'Duties & Taxes': 'Liability', 'Current Liabilities': 'Liability',
+    'Loans & Advances (Liability)': 'Liability', 'Provisions': 'Liability', 'Bank OD Accounts': 'Liability',
+    'Sales Accounts': 'Income', 'Direct Income': 'Income', 'Indirect Income': 'Income',
+    'Purchase Accounts': 'Expense', 'Direct Expenses': 'Expense', 'Indirect Expenses': 'Expense',
+}
+
+// Section metadata for the 4 grouping tabs
+const ACCOUNT_SECTIONS = [
+    { key: 'Asset',     label: 'Assets',      color: 'bg-blue-50 text-blue-700 border-blue-200' },
+    { key: 'Liability', label: 'Liabilities',  color: 'bg-purple-50 text-purple-700 border-purple-200' },
+    { key: 'Income',    label: 'Income',       color: 'bg-green-50 text-green-700 border-green-200' },
+    { key: 'Expense',   label: 'Expenses',     color: 'bg-orange-50 text-orange-700 border-orange-200' },
+] as const
+
+interface GodownRow {
+    tallyGodown: string
+    erpnextWarehouse: string
+    mapped: boolean
+}
+
+// ---------------------------------------------------------------------------
+// Configuration Tab component
+// ---------------------------------------------------------------------------
+
+const ERP_DOCTYPES = ['Sales Invoice', 'Purchase Invoice', 'Payment Entry', 'Journal Entry', 'Stock Entry']
+
+function ConfigurationTab({ companyId }: { companyId: string }) {
+    const [activeSection, setActiveSection] = useState<'accounts' | 'gst' | 'vouchers' | 'godowns'>('accounts')
+    const [configLoading, setConfigLoading] = useState(false)
+    const [configError, setConfigError] = useState<string | null>(null)
+
+    // Account mappings state
+    const [accountRows, setAccountRows] = useState<{ tally: string; erp: string }[]>([])
+    const [accountSaving, setAccountSaving] = useState(false)
+    const [accountSaveMsg, setAccountSaveMsg] = useState<string | null>(null)
+    const [groupDefaultMappings, setGroupDefaultMappings] = useState<Record<string, string>>({})
+    const [activeRootType, setActiveRootType] = useState<'Asset' | 'Liability' | 'Income' | 'Expense' | 'All'>('All')
+
+    // GST mappings state
+    const [gstFields, setGstFields] = useState({
+        output_cgst: '',
+        output_sgst: '',
+        output_igst: '',
+        input_cgst: '',
+        input_sgst: '',
+        input_igst: '',
+    })
+    const [gstSaving, setGstSaving] = useState(false)
+    const [gstSaveMsg, setGstSaveMsg] = useState<string | null>(null)
+
+    // Voucher type mappings state
+    const [voucherRows, setVoucherRows] = useState<{ tally: string; erp: string }[]>([])
+    const [voucherSaving, setVoucherSaving] = useState(false)
+    const [voucherSaveMsg, setVoucherSaveMsg] = useState<string | null>(null)
+
+    // Godown mappings state
+    const [godowns, setGodowns] = useState<GodownRow[]>([])
+    const [godownEdits, setGodownEdits] = useState<Record<string, string>>({})
+    const [godownSaving, setGodownSaving] = useState(false)
+    const [godownSaveMsg, setGodownSaveMsg] = useState<string | null>(null)
+    const [godownLoading, setGodownLoading] = useState(false)
+
+    useEffect(() => {
+        if (!companyId) return
+        setConfigLoading(true)
+        setConfigError(null)
+        apiFetch<ConfigProfile>(`/dashboard/config?companyId=${companyId}`)
+            .then((cfg) => {
+                // Populate account rows (manual mappings only)
+                setAccountRows(
+                    Object.entries(cfg.accountMappings || {}).map(([tally, erp]) => ({ tally, erp: erp as string })),
+                )
+                setGroupDefaultMappings(cfg.groupDefaultMappings || {})
+                // Populate GST fields
+                const gm = cfg.gstLedgerMappings || {}
+                setGstFields({
+                    output_cgst: (gm['output_cgst'] as string) || '',
+                    output_sgst: (gm['output_sgst'] as string) || '',
+                    output_igst: (gm['output_igst'] as string) || '',
+                    input_cgst: (gm['input_cgst'] as string) || '',
+                    input_sgst: (gm['input_sgst'] as string) || '',
+                    input_igst: (gm['input_igst'] as string) || '',
+                })
+                // Populate voucher rows
+                setVoucherRows(
+                    Object.entries(cfg.voucherTypeMappings || {}).map(([tally, erp]) => ({
+                        tally,
+                        erp: erp as string,
+                    })),
+                )
+                // Populate godown edits from config
+                setGodownEdits(cfg.godownWarehouseMappings || {})
+            })
+            .catch((err) => {
+                // 404 means endpoint not yet implemented — show empty state, don't error
+                if (!err.message?.includes('404')) {
+                    setConfigError(err.message)
+                }
+            })
+            .finally(() => setConfigLoading(false))
+    }, [companyId])
+
+    useEffect(() => {
+        if (!companyId || activeSection !== 'godowns') return
+        setGodownLoading(true)
+        apiFetch<{ godowns: GodownRow[] }>(`/dashboard/godowns?companyId=${companyId}`)
+            .then((res) => {
+                setGodowns(res.godowns)
+                // Pre-fill edits with existing mappings
+                const edits: Record<string, string> = {}
+                for (const g of res.godowns) {
+                    if (g.erpnextWarehouse) edits[g.tallyGodown] = g.erpnextWarehouse
+                }
+                setGodownEdits((prev) => ({ ...edits, ...prev }))
+            })
+            .catch(() => {})
+            .finally(() => setGodownLoading(false))
+    }, [companyId, activeSection])
+
+    async function saveAccountMappings() {
+        setAccountSaving(true)
+        setAccountSaveMsg(null)
+        try {
+            const accountMappings: Record<string, string> = {}
+            for (const row of accountRows) {
+                if (row.tally.trim()) accountMappings[row.tally.trim()] = row.erp.trim()
+            }
+            await apiFetch('/dashboard/config', {
+                method: 'PATCH',
+                body: JSON.stringify({ companyId, accountMappings }),
+            })
+            setAccountSaveMsg('Account mappings saved.')
+        } catch (e) {
+            setAccountSaveMsg('Error: ' + (e instanceof Error ? e.message : String(e)))
+        }
+        setAccountSaving(false)
+    }
+
+    async function saveGstMappings() {
+        setGstSaving(true)
+        setGstSaveMsg(null)
+        try {
+            await apiFetch('/dashboard/config', {
+                method: 'PATCH',
+                body: JSON.stringify({ companyId, gstLedgerMappings: gstFields }),
+            })
+            setGstSaveMsg('GST mappings saved.')
+        } catch (e) {
+            setGstSaveMsg('Error: ' + (e instanceof Error ? e.message : String(e)))
+        }
+        setGstSaving(false)
+    }
+
+    async function saveVoucherMappings() {
+        setVoucherSaving(true)
+        setVoucherSaveMsg(null)
+        try {
+            const voucherTypeMappings: Record<string, string> = {}
+            for (const row of voucherRows) {
+                if (row.tally.trim()) voucherTypeMappings[row.tally.trim()] = row.erp
+            }
+            await apiFetch('/dashboard/config', {
+                method: 'PATCH',
+                body: JSON.stringify({ companyId, voucherTypeMappings }),
+            })
+            setVoucherSaveMsg('Voucher type mappings saved.')
+        } catch (e) {
+            setVoucherSaveMsg('Error: ' + (e instanceof Error ? e.message : String(e)))
+        }
+        setVoucherSaving(false)
+    }
+
+    async function saveGodownMappings() {
+        setGodownSaving(true)
+        setGodownSaveMsg(null)
+        try {
+            await apiFetch('/dashboard/config', {
+                method: 'PATCH',
+                body: JSON.stringify({ companyId, godownWarehouseMappings: godownEdits }),
+            })
+            setGodownSaveMsg('Warehouse mappings saved.')
+        } catch (e) {
+            setGodownSaveMsg('Error: ' + (e instanceof Error ? e.message : String(e)))
+        }
+        setGodownSaving(false)
+    }
+
+    const sections = [
+        { id: 'accounts', label: 'Account Mappings' },
+        { id: 'gst', label: 'GST Ledgers' },
+        { id: 'vouchers', label: 'Voucher Types' },
+        { id: 'godowns', label: 'Godown → Warehouse' },
+    ] as const
+
+    if (configLoading) {
+        return (
+            <div className="bg-white rounded-xl shadow-sm border p-8 text-center text-gray-400">
+                Loading configuration...
+            </div>
+        )
+    }
+
+    if (configError) {
+        return (
+            <div className="bg-white rounded-xl shadow-sm border p-8 text-center text-red-500">
+                Failed to load config: {configError}
+            </div>
+        )
+    }
+
+    return (
+        <div className="flex gap-6">
+            {/* Left sidebar navigation */}
+            <div className="w-48 shrink-0">
+                <nav className="bg-white rounded-xl shadow-sm border p-2 space-y-1">
+                    {sections.map((s) => (
+                        <button
+                            key={s.id}
+                            onClick={() => setActiveSection(s.id)}
+                            className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                activeSection === s.id
+                                    ? 'bg-blue-50 text-blue-700'
+                                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                            }`}
+                        >
+                            {s.label}
+                        </button>
+                    ))}
+                </nav>
+            </div>
+
+            {/* Section content */}
+            <div className="flex-1 min-w-0">
+                {/* A. Account Mappings — grouped by root type */}
+                {activeSection === 'accounts' && (
+                    <div className="space-y-4">
+                        {/* Header */}
+                        <div className="bg-white rounded-xl shadow-sm border p-5">
+                            <div className="flex items-start justify-between gap-4">
+                                <div>
+                                    <h3 className="font-semibold text-lg">Account Mappings</h3>
+                                    <p className="text-sm text-gray-500 mt-0.5">
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 mr-1">Auto</span>
+                                        group defaults resolve automatically.
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200 mx-1">Manual</span>
+                                        entries override or extend defaults.
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() => setAccountRows((prev) => [...prev, { tally: '', erp: '' }])}
+                                    className="shrink-0 px-3 py-1.5 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                                >
+                                    + Add Mapping
+                                </button>
+                            </div>
+
+                            {/* Root-type filter tabs */}
+                            <div className="flex gap-2 mt-4 flex-wrap">
+                                {(['All', ...ACCOUNT_SECTIONS.map(s => s.key)] as const).map((rt) => (
+                                    <button
+                                        key={rt}
+                                        onClick={() => setActiveRootType(rt as typeof activeRootType)}
+                                        className={`px-3 py-1 text-xs font-medium rounded-full border transition-colors ${
+                                            activeRootType === rt
+                                                ? 'bg-blue-600 text-white border-blue-600'
+                                                : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400'
+                                        }`}
+                                    >
+                                        {rt === 'All' ? 'All' : ACCOUNT_SECTIONS.find(s => s.key === rt)?.label}
+                                        {rt !== 'All' && (
+                                            <span className="ml-1 text-xs opacity-70">
+                                                ({accountRows.filter(r => (TALLY_GROUP_ROOT_TYPE[r.tally] ?? 'Expense') === rt).length})
+                                            </span>
+                                        )}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Auto-matched group defaults — read-only, collapsible */}
+                        {Object.keys(groupDefaultMappings).length > 0 && (
+                            <details className="bg-emerald-50 rounded-xl border border-emerald-200 p-4 open:space-y-3">
+                                <summary className="cursor-pointer font-medium text-sm text-emerald-800 select-none flex items-center gap-2">
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 border border-emerald-300">Auto</span>
+                                    Group Defaults — {Object.keys(groupDefaultMappings).length} auto-matched accounts
+                                    <span className="text-xs text-emerald-600 ml-auto font-normal">no configuration needed ▾</span>
+                                </summary>
+                                <table className="min-w-full text-sm mt-2">
+                                    <thead>
+                                        <tr className="text-xs text-emerald-700 uppercase">
+                                            <th className="py-1 pr-4 text-left font-semibold">Tally Group</th>
+                                            <th className="py-1 text-left font-semibold">ERPNext Account</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-emerald-100">
+                                        {Object.entries(groupDefaultMappings)
+                                            .filter(([group]) => activeRootType === 'All' || TALLY_GROUP_ROOT_TYPE[group] === activeRootType)
+                                            .map(([group, account]) => (
+                                            <tr key={group}>
+                                                <td className="py-1.5 pr-4 text-emerald-900 font-medium">{group}</td>
+                                                <td className="py-1.5 text-emerald-800">{account}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </details>
+                        )}
+
+                        {/* Manual mappings — editable table */}
+                        <div className="bg-white rounded-xl shadow-sm border p-5 space-y-3">
+                            <h4 className="font-medium text-sm text-gray-700 flex items-center gap-2">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200">Manual</span>
+                                Specific Ledger Mappings
+                                <span className="text-xs text-gray-400 font-normal">— override or extend group defaults</span>
+                            </h4>
+
+                            {accountRows.filter(r => activeRootType === 'All' || (TALLY_GROUP_ROOT_TYPE[r.tally] ?? 'Expense') === activeRootType).length === 0 ? (
+                                <div className="py-6 text-center text-gray-400 text-sm border rounded-lg">
+                                    {activeRootType === 'All'
+                                        ? 'No manual mappings yet. Click "+ Add Mapping" to add one.'
+                                        : `No ${ACCOUNT_SECTIONS.find(s => s.key === activeRootType)?.label.toLowerCase()} mappings yet.`}
+                                </div>
+                            ) : (
+                                <div className="overflow-x-auto">
+                                    <table className="min-w-full divide-y divide-gray-200">
+                                        <thead className="bg-gray-50">
+                                            <tr>
+                                                <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase w-10">Type</th>
+                                                <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Tally Ledger</th>
+                                                <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">ERPNext Account</th>
+                                                <th className="px-4 py-2 w-16"></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="bg-white divide-y divide-gray-100">
+                                            {accountRows.map((row, i) => {
+                                                const rootType = TALLY_GROUP_ROOT_TYPE[row.tally] ?? 'Expense'
+                                                if (activeRootType !== 'All' && rootType !== activeRootType) return null
+                                                const sec = ACCOUNT_SECTIONS.find(s => s.key === rootType)
+                                                return (
+                                                    <tr key={i}>
+                                                        <td className="px-4 py-2">
+                                                            {sec && (
+                                                                <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-medium border ${sec.color}`}>
+                                                                    {sec.label.slice(0, 3)}
+                                                                </span>
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-2">
+                                                            <input
+                                                                type="text"
+                                                                value={row.tally}
+                                                                onChange={(e) => setAccountRows((prev) => {
+                                                                    const next = [...prev]
+                                                                    next[i] = { ...next[i], tally: e.target.value }
+                                                                    return next
+                                                                })}
+                                                                placeholder="Tally ledger name"
+                                                                className="w-full px-2 py-1.5 border rounded text-sm"
+                                                            />
+                                                        </td>
+                                                        <td className="px-4 py-2">
+                                                            <input
+                                                                type="text"
+                                                                value={row.erp}
+                                                                onChange={(e) => setAccountRows((prev) => {
+                                                                    const next = [...prev]
+                                                                    next[i] = { ...next[i], erp: e.target.value }
+                                                                    return next
+                                                                })}
+                                                                placeholder="ERPNext account name"
+                                                                className="w-full px-2 py-1.5 border rounded text-sm"
+                                                            />
+                                                        </td>
+                                                        <td className="px-4 py-2">
+                                                            <button
+                                                                onClick={() => setAccountRows((prev) => prev.filter((_, j) => j !== i))}
+                                                                className="text-red-400 hover:text-red-600 text-xs"
+                                                            >
+                                                                Remove
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                )
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+
+                            <div className="flex items-center gap-3 pt-1">
+                                <button
+                                    onClick={saveAccountMappings}
+                                    disabled={accountSaving}
+                                    className="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                                >
+                                    {accountSaving ? 'Saving...' : 'Save Changes'}
+                                </button>
+                                {accountSaveMsg && (
+                                    <span className={`text-sm ${accountSaveMsg.startsWith('Error') ? 'text-red-600' : 'text-green-600'}`}>
+                                        {accountSaveMsg}
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* B. GST Ledger Mappings */}
+                {activeSection === 'gst' && (
+                    <div className="bg-white rounded-xl shadow-sm border p-6 space-y-5">
+                        <div>
+                            <h3 className="font-semibold text-lg">GST Ledger Mappings</h3>
+                            <p className="text-sm text-gray-500 mt-0.5">
+                                Map Tally GST ledgers to ERPNext tax accounts.
+                            </p>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {(
+                                [
+                                    { key: 'output_cgst', label: 'Output CGST' },
+                                    { key: 'output_sgst', label: 'Output SGST' },
+                                    { key: 'output_igst', label: 'Output IGST' },
+                                    { key: 'input_cgst', label: 'Input CGST' },
+                                    { key: 'input_sgst', label: 'Input SGST' },
+                                    { key: 'input_igst', label: 'Input IGST' },
+                                ] as { key: keyof typeof gstFields; label: string }[]
+                            ).map(({ key, label }) => (
+                                <div key={key}>
+                                    <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+                                    <input
+                                        type="text"
+                                        value={gstFields[key]}
+                                        onChange={(e) => setGstFields((prev) => ({ ...prev, [key]: e.target.value }))}
+                                        placeholder="ERPNext account name"
+                                        className="w-full px-3 py-2 border rounded-lg text-sm"
+                                    />
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={saveGstMappings}
+                                disabled={gstSaving}
+                                className="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                            >
+                                {gstSaving ? 'Saving...' : 'Save GST Mappings'}
+                            </button>
+                            {gstSaveMsg && (
+                                <span
+                                    className={`text-sm ${gstSaveMsg.startsWith('Error') ? 'text-red-600' : 'text-green-600'}`}
+                                >
+                                    {gstSaveMsg}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* C. Voucher Type Mappings */}
+                {activeSection === 'vouchers' && (
+                    <div className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <h3 className="font-semibold text-lg">Voucher Type Mappings</h3>
+                                <p className="text-sm text-gray-500 mt-0.5">
+                                    Map Tally voucher types to ERPNext doctypes.
+                                </p>
+                            </div>
+                            <button
+                                onClick={() =>
+                                    setVoucherRows((prev) => [...prev, { tally: '', erp: 'Journal Entry' }])
+                                }
+                                className="px-3 py-1.5 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                            >
+                                + Add Row
+                            </button>
+                        </div>
+
+                        {voucherRows.length === 0 ? (
+                            <div className="py-8 text-center text-gray-400 text-sm border rounded-lg">
+                                No voucher type mappings configured.
+                            </div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="min-w-full divide-y divide-gray-200">
+                                    <thead className="bg-gray-50">
+                                        <tr>
+                                            <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">
+                                                Tally Voucher Type
+                                            </th>
+                                            <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">
+                                                ERPNext Doctype
+                                            </th>
+                                            <th className="px-4 py-2 w-12"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="bg-white divide-y divide-gray-100">
+                                        {voucherRows.map((row, i) => (
+                                            <tr key={i}>
+                                                <td className="px-4 py-2">
+                                                    <input
+                                                        type="text"
+                                                        value={row.tally}
+                                                        onChange={(e) =>
+                                                            setVoucherRows((prev) => {
+                                                                const next = [...prev]
+                                                                next[i] = { ...next[i], tally: e.target.value }
+                                                                return next
+                                                            })
+                                                        }
+                                                        placeholder="e.g. Sales"
+                                                        className="w-full px-2 py-1.5 border rounded text-sm"
+                                                    />
+                                                </td>
+                                                <td className="px-4 py-2">
+                                                    <select
+                                                        value={row.erp}
+                                                        onChange={(e) =>
+                                                            setVoucherRows((prev) => {
+                                                                const next = [...prev]
+                                                                next[i] = { ...next[i], erp: e.target.value }
+                                                                return next
+                                                            })
+                                                        }
+                                                        className="w-full px-2 py-1.5 border rounded text-sm"
+                                                    >
+                                                        {ERP_DOCTYPES.map((d) => (
+                                                            <option key={d} value={d}>
+                                                                {d}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </td>
+                                                <td className="px-4 py-2">
+                                                    <button
+                                                        onClick={() =>
+                                                            setVoucherRows((prev) => prev.filter((_, j) => j !== i))
+                                                        }
+                                                        className="text-red-400 hover:text-red-600 text-xs"
+                                                    >
+                                                        Remove
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={saveVoucherMappings}
+                                disabled={voucherSaving}
+                                className="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                            >
+                                {voucherSaving ? 'Saving...' : 'Save Voucher Mappings'}
+                            </button>
+                            {voucherSaveMsg && (
+                                <span
+                                    className={`text-sm ${voucherSaveMsg.startsWith('Error') ? 'text-red-600' : 'text-green-600'}`}
+                                >
+                                    {voucherSaveMsg}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* D. Godown → Warehouse Mappings */}
+                {activeSection === 'godowns' && (
+                    <div className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
+                        <div>
+                            <h3 className="font-semibold text-lg">Godown → Warehouse Mappings</h3>
+                            <p className="text-sm text-gray-500 mt-0.5">
+                                Map Tally godowns to ERPNext warehouses. Unmapped rows are highlighted.
+                            </p>
+                        </div>
+
+                        {godownLoading ? (
+                            <div className="py-8 text-center text-gray-400 text-sm">Loading godowns...</div>
+                        ) : godowns.length === 0 ? (
+                            <div className="py-8 text-center text-gray-400 text-sm border rounded-lg">
+                                No godowns found. Sync master data from the connector first.
+                            </div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="min-w-full divide-y divide-gray-200">
+                                    <thead className="bg-gray-50">
+                                        <tr>
+                                            <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">
+                                                Tally Godown
+                                            </th>
+                                            <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">
+                                                ERPNext Warehouse
+                                            </th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                        {godowns.map((g) => {
+                                            const currentVal = godownEdits[g.tallyGodown] ?? ''
+                                            const isMapped = currentVal.trim().length > 0
+                                            return (
+                                                <tr
+                                                    key={g.tallyGodown}
+                                                    className={isMapped ? '' : 'bg-amber-50'}
+                                                >
+                                                    <td className="px-4 py-2 text-sm text-gray-800 font-medium">
+                                                        {g.tallyGodown}
+                                                        {!isMapped && (
+                                                            <span className="ml-2 text-xs text-amber-600 font-normal">
+                                                                unmapped
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-4 py-2">
+                                                        <input
+                                                            type="text"
+                                                            value={currentVal}
+                                                            onChange={(e) =>
+                                                                setGodownEdits((prev) => ({
+                                                                    ...prev,
+                                                                    [g.tallyGodown]: e.target.value,
+                                                                }))
+                                                            }
+                                                            placeholder="ERPNext warehouse name"
+                                                            className="w-full px-2 py-1.5 border rounded text-sm"
+                                                        />
+                                                    </td>
+                                                </tr>
+                                            )
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={saveGodownMappings}
+                                disabled={godownSaving}
+                                className="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                            >
+                                {godownSaving ? 'Saving...' : 'Save Warehouse Mappings'}
+                            </button>
+                            {godownSaveMsg && (
+                                <span
+                                    className={`text-sm ${godownSaveMsg.startsWith('Error') ? 'text-red-600' : 'text-green-600'}`}
+                                >
+                                    {godownSaveMsg}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Inline exception row with fix actions (Task 2)
+// ---------------------------------------------------------------------------
+
+function ExceptionRow({
+    exc,
+    companyId,
+    onResolved,
+}: {
+    exc: Exception
+    companyId: string
+    onResolved: () => void
+}) {
+    const [mapAccount, setMapAccount] = useState('')
+    const [saving, setSaving] = useState(false)
+    const [retrying, setRetrying] = useState(false)
+
+    // Extract ledger name from error message for UNMAPPED_LEDGER
+    const ledgerMatch = /Tally ledger "([^"]+)"/.exec(exc.error_message)
+    const ledgerName = ledgerMatch ? ledgerMatch[1] : null
+
+    const tierBadge = (() => {
+        if (exc.tier === 'TIER3_BLOCK')
+            return <span className="px-2 py-0.5 text-xs font-bold bg-red-100 text-red-800 rounded border border-red-200">Blocked</span>
+        if (exc.tier === 'TIER2_FLAG')
+            return <span className="px-2 py-0.5 text-xs font-bold bg-orange-100 text-orange-800 rounded border border-orange-200">Failed</span>
+        return <span className="px-2 py-0.5 text-xs font-bold bg-gray-100 text-gray-600 rounded border border-gray-200">Info</span>
+    })()
+
+    async function handleSaveAndRetry() {
+        if (!ledgerName || !mapAccount.trim()) return
+        setSaving(true)
+        try {
+            await apiFetch('/dashboard/config', {
+                method: 'PATCH',
+                body: JSON.stringify({
+                    companyId,
+                    accountMappings: { [ledgerName]: mapAccount.trim() },
+                }),
+            })
+            await apiFetch('/dashboard/reprocess-exceptions', {
+                method: 'POST',
+                body: JSON.stringify({ companyId, exceptionIds: [exc.id] }),
+            })
+            onResolved()
+        } catch {
+            /* ignore */
+        }
+        setSaving(false)
+    }
+
+    async function handleRetry() {
+        setRetrying(true)
+        try {
+            await apiFetch('/dashboard/reprocess-exceptions', {
+                method: 'POST',
+                body: JSON.stringify({ companyId, exceptionIds: [exc.id] }),
+            })
+            onResolved()
+        } catch {
+            /* ignore */
+        }
+        setRetrying(false)
+    }
+
+    return (
+        <div className="bg-white rounded-xl shadow-sm border border-red-100 p-4">
+            <div className="space-y-2">
+                <div className="flex items-center space-x-3 flex-wrap gap-y-1">
+                    {tierBadge}
+                    <span className="text-xs font-mono text-slate-600">{exc.error_code}</span>
+                    {exc.document_ref && (
+                        <span className="text-xs text-gray-400 font-mono">{exc.document_ref}</span>
+                    )}
+                    <span className="text-xs text-gray-400">{new Date(exc.created_at).toLocaleString()}</span>
+                </div>
+                <div className="text-sm text-slate-700 bg-slate-50 p-2.5 rounded-lg border">
+                    {exc.error_message}
+                </div>
+
+                {/* UNMAPPED_LEDGER: inline map input */}
+                {exc.error_code === 'UNMAPPED_LEDGER' && ledgerName && (
+                    <div className="flex items-center gap-2 mt-2 flex-wrap">
+                        <span className="text-xs text-gray-500 font-medium">Map &quot;{ledgerName}&quot; to:</span>
+                        <input
+                            type="text"
+                            value={mapAccount}
+                            onChange={(e) => setMapAccount(e.target.value)}
+                            placeholder="ERPNext account name"
+                            className="px-2 py-1.5 border rounded text-sm w-64"
+                        />
+                        <button
+                            onClick={handleSaveAndRetry}
+                            disabled={saving || !mapAccount.trim()}
+                            className="px-3 py-1.5 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
+                        >
+                            {saving ? 'Saving...' : 'Save & Retry'}
+                        </button>
+                    </div>
+                )}
+
+                {/* ERPNEXT_WRITE_FAILED or MASTER_CREATE_FAILED: retry button */}
+                {(exc.error_code === 'ERPNEXT_WRITE_FAILED' || exc.error_code === 'MASTER_CREATE_FAILED') && (
+                    <div className="mt-2">
+                        <button
+                            onClick={handleRetry}
+                            disabled={retrying}
+                            className="px-3 py-1.5 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                        >
+                            {retrying ? 'Retrying...' : 'Retry'}
+                        </button>
+                    </div>
+                )}
+            </div>
+        </div>
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Main Dashboard
+// ---------------------------------------------------------------------------
+
 export default function CloudDashboard() {
     const { admin, logout } = useAuth()
     const [activeTab, setActiveTab] = useState('overview')
@@ -78,6 +879,7 @@ export default function CloudDashboard() {
     const [openingStockResult, setOpeningStockResult] = useState<{ ok: boolean; message: string } | null>(null)
     const [cloudHealth, setCloudHealth] = useState<{ db: string; redis: string } | null>(null)
     const [syncProgress, setSyncProgress] = useState<{ synced: number; errored: number; active: boolean } | null>(null)
+    const [retryAllLoading, setRetryAllLoading] = useState(false)
     const prevSyncedRef = useRef<number>(-1)
     const syncProgressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -111,7 +913,33 @@ export default function CloudDashboard() {
         }
     }
 
-    // Poll stats every 3s to detect active sync — drives the progress indicator
+    async function refreshExceptions() {
+        if (!selectedCompanyId) return
+        try {
+            const e = await apiFetch<{ exceptions: Exception[] }>(
+                `/dashboard/exceptions?companyId=${selectedCompanyId}`,
+            )
+            setExceptions(e.exceptions)
+        } catch {
+            /* ignore */
+        }
+    }
+
+    async function handleRetryAllFailed() {
+        setRetryAllLoading(true)
+        try {
+            await apiFetch('/dashboard/reprocess-exceptions', {
+                method: 'POST',
+                body: JSON.stringify({ companyId: selectedCompanyId, errorCode: 'ERPNEXT_WRITE_FAILED' }),
+            })
+            await refreshExceptions()
+        } catch {
+            /* ignore */
+        }
+        setRetryAllLoading(false)
+    }
+
+    // Poll stats every 3s to detect active sync
     useEffect(() => {
         if (!selectedCompanyId) return
         const t = setInterval(async () => {
@@ -153,8 +981,14 @@ export default function CloudDashboard() {
             .then((res) => {
                 setCompanies(res.companies)
                 if (res.companies.length > 0) {
-                    setSelectedCompanyId(res.companies[0].id)
-                    const hb = res.companies[0].last_heartbeat_at
+                    // Prefer the most recently active company; fall back to first
+                    const mostRecent = res.companies.reduce((a, b) => {
+                        const ta = a.last_heartbeat_at ? new Date(a.last_heartbeat_at).getTime() : 0
+                        const tb = b.last_heartbeat_at ? new Date(b.last_heartbeat_at).getTime() : 0
+                        return tb > ta ? b : a
+                    })
+                    setSelectedCompanyId((prev) => prev || mostRecent.id)
+                    const hb = mostRecent.last_heartbeat_at
                     if (hb) {
                         const ago = Date.now() - new Date(hb).getTime()
                         setConnectorOnline(ago < 60_000)
@@ -192,6 +1026,21 @@ export default function CloudDashboard() {
         if (!lastMessage) return
         if (lastMessage.event === 'connector:status') {
             setConnectorOnline(true)
+            // Re-fetch companies so a newly connected company appears in the dropdown
+            apiFetch<{ companies: Company[] }>('/dashboard/companies')
+                .then((res) => {
+                    setCompanies(res.companies)
+                    // Auto-select the newly connected company (freshest heartbeat within last 60s)
+                    const fresh = res.companies.find((c) => {
+                        if (!c.last_heartbeat_at) return false
+                        return Date.now() - new Date(c.last_heartbeat_at).getTime() < 60_000
+                    })
+                    if (fresh) {
+                        setSelectedCompanyId(fresh.id)
+                        setConnectorOnline(true)
+                    }
+                })
+                .catch(() => {})
         }
         if (lastMessage.event === 'sync:progress' && selectedCompanyId) {
             apiFetch<Stats>(`/dashboard/stats?companyId=${selectedCompanyId}`)
@@ -256,6 +1105,13 @@ export default function CloudDashboard() {
 
     const openExceptions = exceptions.filter((e) => !e.resolved_at)
 
+    // Last config sync: use the selected company's heartbeat
+    const selectedCompany = companies.find((c) => c.id === selectedCompanyId)
+    const lastHeartbeat = selectedCompany?.last_heartbeat_at
+    const lastHeartbeatDisplay = lastHeartbeat
+        ? new Date(lastHeartbeat).toLocaleString()
+        : 'No heartbeat received'
+
     return (
         <div className="min-h-screen bg-neutral-100 font-sans text-neutral-900">
             {/* Top Navbar */}
@@ -273,6 +1129,7 @@ export default function CloudDashboard() {
                                         label: `Exceptions (${stats?.openExceptions ?? openExceptions.length})`,
                                     },
                                     { id: 'activity', label: 'Activity Log' },
+                                    { id: 'config', label: 'Configuration' },
                                     { id: 'settings', label: 'Settings' },
                                 ].map((tab) => (
                                     <button
@@ -305,7 +1162,7 @@ export default function CloudDashboard() {
                                 </select>
                             )}
 
-                            {/* Sync progress pill — only shown during active sync */}
+                            {/* Sync progress pill */}
                             {syncProgress && (
                                 <div className="flex items-center space-x-2 text-sm px-3 py-1.5 rounded-full border bg-blue-50 border-blue-200 shadow-sm min-w-[160px]">
                                     <div className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></div>
@@ -376,7 +1233,16 @@ export default function CloudDashboard() {
                 {/* -- OVERVIEW TAB -- */}
                 {activeTab === 'overview' && (
                     <div className="space-y-6">
-                        <h1 className="text-2xl font-bold text-slate-800 tracking-tight">System Overview</h1>
+                        <div className="flex items-start justify-between">
+                            <h1 className="text-2xl font-bold text-slate-800 tracking-tight">System Overview</h1>
+                            {/* Task 4: Last config sync indicator */}
+                            <div className="text-right">
+                                <div className="text-xs text-gray-400 font-medium uppercase tracking-wide">
+                                    Last Config Sync
+                                </div>
+                                <div className="text-sm text-gray-600 font-mono mt-0.5">{lastHeartbeatDisplay}</div>
+                            </div>
+                        </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                             <MetricCard title="Vouchers Synced" value={stats?.synced ?? 0} />
@@ -448,7 +1314,8 @@ export default function CloudDashboard() {
                             Data Status — Tally vs ERPNext
                         </h1>
                         <p className="text-slate-600">
-                            Comparison of synced records in the cloud database vs documents created in ERPNext.
+                            Comparison of source counts from Tally, records synced in cloud, and documents created in
+                            ERPNext.
                         </p>
 
                         {dataLoading ? (
@@ -457,7 +1324,42 @@ export default function CloudDashboard() {
                             </div>
                         ) : dataComparison ? (
                             <>
-                                {/* Summary cards */}
+                                {/* Task 3: Data Coverage summary cards */}
+                                <div className="bg-white rounded-xl shadow-sm border p-5">
+                                    <h3 className="font-semibold text-slate-800 mb-3">Data Coverage</h3>
+                                    <div className="grid grid-cols-3 divide-x text-center">
+                                        <div className="px-4">
+                                            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                                                Tally Source
+                                            </div>
+                                            <div className="text-3xl font-extrabold text-slate-800">
+                                                {dataComparison.tallyCountsRaw
+                                                    ? Object.values(dataComparison.tallyCountsRaw)
+                                                          .reduce((a, b) => a + b, 0)
+                                                          .toLocaleString()
+                                                    : '—'}
+                                            </div>
+                                        </div>
+                                        <div className="px-4">
+                                            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                                                Cloud Received
+                                            </div>
+                                            <div className="text-3xl font-extrabold text-blue-700">
+                                                {dataComparison.totalTallySynced.toLocaleString()}
+                                            </div>
+                                        </div>
+                                        <div className="px-4">
+                                            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                                                ERPNext Created
+                                            </div>
+                                            <div className="text-3xl font-extrabold text-green-700">
+                                                {dataComparison.totalErpNext.toLocaleString()}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Summary stat cards */}
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <MetricCard title="Total Synced (Cloud)" value={dataComparison.totalTallySynced} />
                                     <MetricCard title="Total in ERPNext" value={dataComparison.totalErpNext} />
@@ -472,22 +1374,25 @@ export default function CloudDashboard() {
                                     />
                                 </div>
 
-                                {/* Comparison table */}
+                                {/* Task 3: Extended comparison table with Tally column */}
                                 <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
                                     <table className="min-w-full divide-y divide-gray-200">
                                         <thead className="bg-gray-50">
                                             <tr>
                                                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                                                    Document Type
+                                                    Type
                                                 </th>
                                                 <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                                                    Cloud (Synced)
+                                                    Tally
+                                                </th>
+                                                <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                                    Cloud
                                                 </th>
                                                 <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
                                                     ERPNext
                                                 </th>
                                                 <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                                                    Diff
+                                                    Gap
                                                 </th>
                                                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                                                     Status
@@ -498,6 +1403,14 @@ export default function CloudDashboard() {
                                             {dataComparison.comparison.map((row) => {
                                                 const diff = row.tallySynced - row.erpnextCount
                                                 const erpFailed = row.erpnextCount === -1
+                                                const hasTallyCount =
+                                                    dataComparison.tallyCountsRaw != null &&
+                                                    row.tallyCount != null
+                                                const tallyCount = row.tallyCount ?? null
+                                                const gap =
+                                                    hasTallyCount && tallyCount !== null
+                                                        ? tallyCount - row.erpnextCount
+                                                        : null
                                                 return (
                                                     <tr
                                                         key={row.doctype}
@@ -505,6 +1418,13 @@ export default function CloudDashboard() {
                                                     >
                                                         <td className="px-6 py-4 text-sm font-medium text-gray-900">
                                                             {row.label}
+                                                        </td>
+                                                        <td className="px-6 py-4 text-sm text-right font-mono text-gray-700">
+                                                            {hasTallyCount && tallyCount !== null ? (
+                                                                tallyCount.toLocaleString()
+                                                            ) : (
+                                                                <span className="text-gray-300 text-xs">—</span>
+                                                            )}
                                                         </td>
                                                         <td className="px-6 py-4 text-sm text-right font-mono text-gray-700">
                                                             {row.tallySynced.toLocaleString()}
@@ -517,19 +1437,19 @@ export default function CloudDashboard() {
                                                             )}
                                                         </td>
                                                         <td className="px-6 py-4 text-sm text-right font-mono">
-                                                            {erpFailed ? (
+                                                            {gap === null ? (
+                                                                <span className="text-gray-300 text-xs">—</span>
+                                                            ) : erpFailed ? (
                                                                 '—'
                                                             ) : (
                                                                 <span
                                                                     className={
-                                                                        diff > 0
-                                                                            ? 'text-amber-600 font-semibold'
-                                                                            : diff === 0
-                                                                              ? 'text-green-600'
-                                                                              : 'text-blue-600'
+                                                                        gap > 0
+                                                                            ? 'text-red-600 font-semibold'
+                                                                            : 'text-green-600 font-semibold'
                                                                     }
                                                                 >
-                                                                    {diff > 0 ? `+${diff}` : diff === 0 ? '0' : diff}
+                                                                    {gap > 0 ? `+${gap}` : gap}
                                                                 </span>
                                                             )}
                                                         </td>
@@ -564,6 +1484,13 @@ export default function CloudDashboard() {
                                             <tr>
                                                 <td className="px-6 py-3 text-gray-700">Total</td>
                                                 <td className="px-6 py-3 text-right font-mono text-gray-700">
+                                                    {dataComparison.tallyCountsRaw
+                                                        ? Object.values(dataComparison.tallyCountsRaw)
+                                                              .reduce((a, b) => a + b, 0)
+                                                              .toLocaleString()
+                                                        : '—'}
+                                                </td>
+                                                <td className="px-6 py-3 text-right font-mono text-gray-700">
                                                     {dataComparison.totalTallySynced.toLocaleString()}
                                                 </td>
                                                 <td className="px-6 py-3 text-right font-mono text-gray-700">
@@ -587,6 +1514,19 @@ export default function CloudDashboard() {
                                             </tr>
                                         </tfoot>
                                     </table>
+                                    {/* Tally counts footer note */}
+                                    <div className="px-6 py-3 border-t bg-gray-50">
+                                        {dataComparison.tallyCountsRaw == null ? (
+                                            <p className="text-xs text-gray-400 italic">
+                                                Connect Tally to see source counts
+                                            </p>
+                                        ) : dataComparison.tallyCountsUpdatedAt ? (
+                                            <p className="text-xs text-gray-400">
+                                                Tally counts as of{' '}
+                                                {new Date(dataComparison.tallyCountsUpdatedAt).toLocaleString()}
+                                            </p>
+                                        ) : null}
+                                    </div>
                                 </div>
 
                                 {/* Exception breakdown */}
@@ -633,7 +1573,18 @@ export default function CloudDashboard() {
                 {/* -- EXCEPTIONS TAB -- */}
                 {activeTab === 'exceptions' && (
                     <div className="space-y-6">
-                        <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Exception Register</h1>
+                        <div className="flex items-center justify-between">
+                            <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Exception Register</h1>
+                            {openExceptions.length > 0 && (
+                                <button
+                                    onClick={handleRetryAllFailed}
+                                    disabled={retryAllLoading}
+                                    className="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                                >
+                                    {retryAllLoading ? 'Retrying...' : 'Retry All Failed'}
+                                </button>
+                            )}
+                        </div>
 
                         {/* Group summary + reprocess buttons */}
                         {openExceptions.length > 0 &&
@@ -717,30 +1668,12 @@ export default function CloudDashboard() {
                         ) : (
                             <div className="space-y-3">
                                 {openExceptions.map((exc) => (
-                                    <div
+                                    <ExceptionRow
                                         key={exc.id}
-                                        className="bg-white rounded-xl shadow-sm border border-red-100 p-4"
-                                    >
-                                        <div className="space-y-2">
-                                            <div className="flex items-center space-x-3">
-                                                <span className="px-2 py-0.5 text-xs font-bold bg-red-100 text-red-800 rounded border border-red-200">
-                                                    {exc.tier}
-                                                </span>
-                                                <span className="text-xs font-mono text-slate-600">
-                                                    {exc.document_ref}
-                                                </span>
-                                                <span className="text-xs text-gray-400">
-                                                    {new Date(exc.created_at).toLocaleString()}
-                                                </span>
-                                            </div>
-                                            <div className="text-sm text-slate-700 bg-slate-50 p-2.5 rounded-lg border">
-                                                <span className="font-mono text-red-600 mr-2 font-bold">
-                                                    {exc.error_code}
-                                                </span>
-                                                {exc.error_message}
-                                            </div>
-                                        </div>
-                                    </div>
+                                        exc={exc}
+                                        companyId={selectedCompanyId}
+                                        onResolved={refreshExceptions}
+                                    />
                                 ))}
                             </div>
                         )}
@@ -787,6 +1720,24 @@ export default function CloudDashboard() {
                                 </table>
                             )}
                         </div>
+                    </div>
+                )}
+
+                {/* -- CONFIGURATION TAB (Task 1) -- */}
+                {activeTab === 'config' && (
+                    <div className="space-y-6">
+                        <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Configuration</h1>
+                        <p className="text-slate-600">
+                            Manage account mappings, GST ledgers, voucher type mappings, and warehouse mappings for{' '}
+                            <strong>{selectedCompany?.tally_company_name}</strong>.
+                        </p>
+                        {selectedCompanyId ? (
+                            <ConfigurationTab companyId={selectedCompanyId} />
+                        ) : (
+                            <div className="bg-white rounded-xl shadow-sm border p-8 text-center text-gray-400">
+                                Select a company to configure.
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -837,10 +1788,18 @@ export default function CloudDashboard() {
                                         </div>
                                         <div className="text-xs text-gray-400 font-mono">ID: {c.id}</div>
                                     </div>
-                                    <div className="text-sm text-gray-500">
-                                        {c.last_heartbeat_at
-                                            ? `Last heartbeat: ${new Date(c.last_heartbeat_at).toLocaleString()}`
-                                            : 'No heartbeat received'}
+                                    <div className="text-right">
+                                        <div className="text-sm text-gray-500">
+                                            {c.last_heartbeat_at
+                                                ? `Last heartbeat: ${new Date(c.last_heartbeat_at).toLocaleString()}`
+                                                : 'No heartbeat received'}
+                                        </div>
+                                        {c.last_heartbeat_at && (
+                                            <div className="text-xs text-gray-400 mt-0.5">
+                                                Last config sync:{' '}
+                                                {new Date(c.last_heartbeat_at).toLocaleString()}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             ))}

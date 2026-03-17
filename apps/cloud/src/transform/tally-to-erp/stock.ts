@@ -66,7 +66,7 @@ export function transformStock(
         }
     }
 
-    const defaultWarehouse = config.defaultWarehouse ?? `Stores - ${config.erpnextAbbr ?? 'CPT'}`
+    const defaultWarehouse = config.defaultWarehouse ?? `Stores - ${config.erpnextAbbr ?? ''}`
 
     // Default resolver: godown name → warehouse (strips ERPNext ABBR suffix if present, else appends it)
     const resolveWarehouse =
@@ -75,7 +75,7 @@ export function transformStock(
             if (!godown || godown.toLowerCase() === 'main location' || godown === '') {
                 return defaultWarehouse
             }
-            const abbr = config.erpnextAbbr ?? 'CPT'
+            const abbr = config.erpnextAbbr ?? ''
             // If already has " - ABBR" suffix, return as-is
             if (godown.endsWith(` - ${abbr}`)) return godown
             return `${godown} - ${abbr}`

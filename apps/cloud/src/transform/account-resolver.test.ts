@@ -176,6 +176,84 @@ describe('aggressive party detection', () => {
             expect(result.account).toBe('2110 - Creditors - TC')
         }
     })
+
+    // ── Group-based default resolution (T5) ─────────────────────────────────
+
+    it('resolves ledger in Sales Accounts group via groupDefaultMappings', () => {
+        const cfg = makeConfig({
+            ledgerGroups: { 'Local Sales': 'Sales Accounts' },
+            groupDefaultMappings: { 'Sales Accounts': 'Sales - TC' },
+        })
+        const result = resolveAccount('Local Sales', cfg)
+        expect(isTransformError(result)).toBe(false)
+        if (!isTransformError(result)) {
+            expect(result.account).toBe('Sales - TC')
+            expect(result.isGST).toBe(false)
+        }
+    })
+
+    it('resolves ledger in Indirect Expenses group via groupDefaultMappings', () => {
+        const cfg = makeConfig({
+            ledgerGroups: { 'Freight Charges': 'Indirect Expenses' },
+            groupDefaultMappings: { 'Indirect Expenses': 'Indirect Expenses - TC' },
+        })
+        const result = resolveAccount('Freight Charges', cfg)
+        expect(isTransformError(result)).toBe(false)
+        if (!isTransformError(result)) {
+            expect(result.account).toBe('Indirect Expenses - TC')
+        }
+    })
+
+    it('resolves Sundry Debtors group as debtor party via ledgerGroups', () => {
+        const cfg = makeConfig({
+            ledgerGroups: { 'New Customer Ltd': 'Sundry Debtors' },
+            groupDefaultMappings: {},
+        })
+        const result = resolveAccount('New Customer Ltd', cfg)
+        expect(isTransformError(result)).toBe(false)
+        if (!isTransformError(result)) {
+            expect(result.isPartyFallback).toBe(true)
+            expect(result.account).toContain('Debtors')
+        }
+    })
+
+    it('resolves Sundry Creditors group as creditor party via ledgerGroups', () => {
+        const cfg = makeConfig({
+            ledgerGroups: { 'ABC Suppliers': 'Sundry Creditors' },
+            groupDefaultMappings: {},
+        })
+        const result = resolveAccount('ABC Suppliers', cfg)
+        expect(isTransformError(result)).toBe(false)
+        if (!isTransformError(result)) {
+            expect(result.isPartyFallback).toBe(true)
+            expect(result.account).toContain('Creditors')
+        }
+    })
+
+    it('manual accountMappings takes priority over groupDefaultMappings', () => {
+        const cfg = makeConfig({
+            accountMappings: { ...makeConfig().accountMappings, 'Special Sales': 'Custom Sales Account - TC' },
+            ledgerGroups: { 'Special Sales': 'Sales Accounts' },
+            groupDefaultMappings: { 'Sales Accounts': 'Sales - TC' },
+        })
+        const result = resolveAccount('Special Sales', cfg)
+        expect(isTransformError(result)).toBe(false)
+        if (!isTransformError(result)) {
+            expect(result.account).toBe('Custom Sales Account - TC')
+        }
+    })
+
+    it('falls through to UNMAPPED_LEDGER when group has no default and name has expense keyword', () => {
+        const cfg = makeConfig({
+            ledgerGroups: { 'Unknown Expense': 'Indirect Expenses' },
+            groupDefaultMappings: {}, // no default for this group
+        })
+        const result = resolveAccount('Unknown Expense', cfg)
+        expect(isTransformError(result)).toBe(true)
+        if (isTransformError(result)) {
+            expect(result.code).toBe('UNMAPPED_LEDGER')
+        }
+    })
 })
 
 describe('isTransformError', () => {

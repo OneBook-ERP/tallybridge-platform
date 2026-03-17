@@ -6,7 +6,7 @@ import { resolveAccount, isTransformError } from '../account-resolver'
 import { resolveGST } from '../gst-resolver'
 import { tallyDateToErp, absAmount, roundInr, sanitiseName, stateFromGstin, validGstin } from '../utils'
 
-const FALLBACK_STATE = 'Tamil Nadu' // only used if neither GSTIN nor config.defaultState is set
+const FALLBACK_STATE = '' // last resort: no GSTIN and no defaultState configured — caller should handle empty
 
 export function transformSales(voucher: TallyVoucher, config: CompanyConfig): TransformResult<ERPNextSalesInvoice> {
     const warnings: string[] = []

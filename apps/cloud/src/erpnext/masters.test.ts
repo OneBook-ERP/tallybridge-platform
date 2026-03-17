@@ -500,7 +500,7 @@ describe('ensureCompanyAddress', () => {
 
         const body = JSON.parse(mockFetch.mock.calls[1][1].body)
         expect(body.state).toBe('Tamil Nadu') // 33 = TN
-        expect(body.city).toBe('Coimbatore')
+        expect(body.city).toBe('Chennai')
         expect(body.gstin).toBe('33AABCM1234Z1ZV')
         expect(body.is_your_company_address).toBe(1)
         expect(body.links[0].link_doctype).toBe('Company')

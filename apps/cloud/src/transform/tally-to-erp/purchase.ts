@@ -12,7 +12,7 @@ import { resolveAccount, isTransformError } from '../account-resolver'
 import { resolveGST } from '../gst-resolver'
 import { tallyDateToErp, absAmount, roundInr, sanitiseName, stateFromGstin, validGstin } from '../utils'
 
-const FALLBACK_STATE = 'Tamil Nadu' // only used if neither GSTIN nor config.defaultState is set
+const FALLBACK_STATE = '' // last resort: no GSTIN and no defaultState configured — caller should handle empty
 
 export function transformPurchase(
     voucher: TallyVoucher,
@@ -34,11 +34,14 @@ export function transformPurchase(
     const totalPartyAmount = partyEntries.reduce((s, e) => s + e.amount, 0)
     const isReturnByPartyAmount = !isReturnByName && partyEntries.length > 0 && totalPartyAmount > 0
 
+    // In Tally, NEGATIVE inventory qty = stock inward (normal purchase).
+    // POSITIVE inventory qty = stock outward (purchase return / debit note).
+    // So positive qty across all entries indicates a return.
     const isReturnByQty =
         !isReturnByName &&
         !isReturnByPartyAmount &&
         voucher.inventoryEntries.length > 0 &&
-        voucher.inventoryEntries.every((e) => e.billedQty < 0 || e.actualQty < 0)
+        voucher.inventoryEntries.every((e) => (e.billedQty || e.actualQty) > 0)
     const isReturn = isReturnByName || isReturnByPartyAmount || isReturnByQty
 
     const companyState =

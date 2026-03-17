@@ -8,6 +8,7 @@ import { erpClient } from '../../erpnext/client'
 import { generateOpeningBalance } from '../../sync/opening-balance'
 import { logger } from '../../lib/logger'
 import { requireAdmin, scopeCompany, type AdminIdentity } from '../../auth/require-admin'
+import { buildDefaultMappings } from '../../transform/default-mappings'
 
 type AuthedRequest = FastifyRequest & { adminIdentity: AdminIdentity }
 
@@ -238,7 +239,7 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
                 erpnextAbbr: company.erpnext_abbr ?? undefined,
                 postingDate,
                 accountMappings: profile?.account_mappings ?? {},
-                costCenter: `Main - ${company.erpnext_abbr ?? 'CPT'}`,
+                costCenter: company.erpnext_abbr ? `Main - ${company.erpnext_abbr}` : undefined,
                 companyGstin: company.erpnext_gstin ?? undefined,
                 erpnextUrl: company.erpnext_url,
                 erpnextApiKey: company.erpnext_api_key,
@@ -356,22 +357,28 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
         const identity = (req as AuthedRequest).adminIdentity
         const companyId = scopeCompany(identity, req.query.companyId)
 
-        // Get company details for ERPNext filtering
+        // Get company details for ERPNext filtering and Tally-side counts (from heartbeat)
         let erpnextCompany: string | null = null
+        let tallyCountsRaw: Record<string, number> | null = null
+        let tallyCountsUpdatedAt: string | null = null
         if (companyId) {
-            const [co] = await sql`SELECT erpnext_company FROM companies WHERE id = ${companyId}`
+            const [co] = await sql<
+                { erpnext_company: string; tally_counts: Record<string, number> | null; last_heartbeat_at: string | null }[]
+            >`SELECT erpnext_company, tally_counts, last_heartbeat_at FROM companies WHERE id = ${companyId}`
             erpnextCompany = co?.erpnext_company ?? null
+            tallyCountsRaw = co?.tally_counts ?? null
+            tallyCountsUpdatedAt = co?.last_heartbeat_at ?? null
         }
 
         // Tally side: count vouchers synced to cloud by type (from sync_records)
-        const tallyCounts = await sql`
+        const syncedRows = await sql`
             SELECT erpnext_doctype, count(*) as count
             FROM sync_records
             ${companyId ? sql`WHERE company_id = ${companyId}` : sql``}
             GROUP BY erpnext_doctype
         `
         const tallyByType: Record<string, number> = {}
-        for (const row of tallyCounts) {
+        for (const row of syncedRows) {
             tallyByType[row.erpnext_doctype] = Number(row.count)
         }
 
@@ -415,6 +422,33 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
             }),
         )
 
+        // Helper: resolve tallyCount from tally_counts JSONB stored via heartbeat
+        function resolveTallyCount(doctype: string): number | null {
+            if (!tallyCountsRaw) return null
+            const tc = tallyCountsRaw
+            switch (doctype) {
+                case 'Sales Invoice':
+                    return (tc['Sales'] ?? tc['Sales Invoice'] ?? null)
+                case 'Purchase Invoice':
+                    return (tc['Purchase'] ?? tc['Purchase Invoice'] ?? null)
+                case 'Payment Entry': {
+                    const pay = tc['Payment'] ?? 0
+                    const rec = tc['Receipt'] ?? 0
+                    return pay + rec > 0 ? pay + rec : (tc['Payment Entry'] ?? null)
+                }
+                case 'Journal Entry':
+                    return (tc['Journal'] ?? tc['Journal Entry'] ?? null)
+                case 'Stock Entry':
+                    return (tc['Stock Journal'] ?? tc['Stock Entry'] ?? null)
+                case 'Customer':
+                    return (tc['ledger_type_Sundry Debtors'] ?? tc['customers'] ?? null)
+                case 'Supplier':
+                    return (tc['ledger_type_Sundry Creditors'] ?? tc['suppliers'] ?? null)
+                default:
+                    return null
+            }
+        }
+
         // Build comparison rows
         const categories = [
             { label: 'Items', doctype: 'Item', tallyKey: 'Item' },
@@ -431,6 +465,7 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
             doctype: cat.doctype,
             tallySynced: tallyByType[cat.tallyKey] ?? 0,
             erpnextCount: erpCounts[cat.doctype] ?? 0,
+            tallyCount: resolveTallyCount(cat.doctype),
         }))
 
         return {
@@ -440,6 +475,131 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
             totalErpNext: Object.values(erpCounts)
                 .filter((v) => v >= 0)
                 .reduce((a, b) => a + b, 0),
+            tallyCountsRaw,
+            tallyCountsUpdatedAt,
+        }
+    })
+
+    // GET /dashboard/config — return current config_profiles + godown mappings for a company
+    app.get<{ Querystring: { companyId?: string } }>('/dashboard/config', async (req) => {
+        const identity = (req as AuthedRequest).adminIdentity
+        const companyId = scopeCompany(identity, req.query.companyId)
+
+        if (!companyId) {
+            return { accountMappings: {}, gstLedgerMappings: {}, voucherTypeMappings: {}, godownWarehouseMappings: {} }
+        }
+
+        const [companyRow] = await sql<{ erpnext_abbr: string | null }[]>`
+            SELECT erpnext_abbr FROM companies WHERE id = ${companyId}
+        `
+
+        const [profile] = await sql<
+            {
+                account_mappings: Record<string, string> | null
+                gst_ledger_mappings: Record<string, string> | null
+                voucher_type_mappings: Record<string, unknown> | null
+            }[]
+        >`
+            SELECT account_mappings, gst_ledger_mappings, voucher_type_mappings
+            FROM config_profiles
+            WHERE company_id = ${companyId}
+        `
+
+        const godownRows = await sql<{ tally_godown: string; erpnext_warehouse: string | null }[]>`
+            SELECT tally_godown, erpnext_warehouse
+            FROM godown_warehouse_mapping
+            WHERE company_id = ${companyId}
+            ORDER BY tally_godown
+        `
+        const godownWarehouseMappings: Record<string, string> = {}
+        for (const row of godownRows) {
+            if (row.erpnext_warehouse) godownWarehouseMappings[row.tally_godown] = row.erpnext_warehouse
+        }
+
+        const abbr = companyRow?.erpnext_abbr ?? ''
+        const { groupDefaultMappings } = buildDefaultMappings(abbr)
+
+        return {
+            abbr,
+            accountMappings: profile?.account_mappings ?? {},
+            gstLedgerMappings: profile?.gst_ledger_mappings ?? {},
+            voucherTypeMappings: profile?.voucher_type_mappings ?? {},
+            godownWarehouseMappings,
+            groupDefaultMappings,
+        }
+    })
+
+    // PATCH /dashboard/config — merge mappings and/or upsert godown→warehouse pairs
+    app.patch<{
+        Body: {
+            companyId?: string
+            accountMappings?: Record<string, string>
+            gstLedgerMappings?: Record<string, string>
+            voucherTypeMappings?: Record<string, unknown>
+            godownWarehouseMappings?: Record<string, string>
+        }
+    }>('/dashboard/config', async (req, reply) => {
+        const identity = (req as AuthedRequest).adminIdentity
+        const body = req.body ?? {}
+        const companyId = scopeCompany(identity, body.companyId)
+        if (!companyId) {
+            return reply.code(400).send({ error: 'VALIDATION_ERROR', message: 'companyId is required' })
+        }
+
+        if (body.accountMappings && Object.keys(body.accountMappings).length > 0) {
+            await sql`
+                UPDATE config_profiles
+                SET account_mappings = account_mappings || ${sql.json(body.accountMappings)}::jsonb
+                WHERE company_id = ${companyId}
+            `
+        }
+        if (body.gstLedgerMappings && Object.keys(body.gstLedgerMappings).length > 0) {
+            await sql`
+                UPDATE config_profiles
+                SET gst_ledger_mappings = gst_ledger_mappings || ${sql.json(body.gstLedgerMappings)}::jsonb
+                WHERE company_id = ${companyId}
+            `
+        }
+        if (body.voucherTypeMappings && Object.keys(body.voucherTypeMappings).length > 0) {
+            await sql`
+                UPDATE config_profiles
+                SET voucher_type_mappings = voucher_type_mappings || ${sql.json(body.voucherTypeMappings as Record<string, string>)}::jsonb
+                WHERE company_id = ${companyId}
+            `
+        }
+        if (body.godownWarehouseMappings) {
+            for (const [tallyGodown, erpnextWarehouse] of Object.entries(body.godownWarehouseMappings)) {
+                await sql`
+                    INSERT INTO godown_warehouse_mapping (company_id, tally_godown, erpnext_warehouse)
+                    VALUES (${companyId}, ${tallyGodown}, ${erpnextWarehouse})
+                    ON CONFLICT (company_id, tally_godown)
+                    DO UPDATE SET erpnext_warehouse = EXCLUDED.erpnext_warehouse
+                `
+            }
+        }
+
+        logger.info({ companyId }, 'Dashboard config patched')
+        return reply.send({ ok: true, updated: companyId })
+    })
+
+    // GET /dashboard/godowns — list discovered godowns with optional warehouse mapping
+    app.get<{ Querystring: { companyId?: string } }>('/dashboard/godowns', async (req) => {
+        const identity = (req as AuthedRequest).adminIdentity
+        const companyId = scopeCompany(identity, req.query.companyId)
+
+        const rows = await sql<{ tally_godown: string; erpnext_warehouse: string | null }[]>`
+            SELECT tally_godown, erpnext_warehouse
+            FROM godown_warehouse_mapping
+            ${companyId ? sql`WHERE company_id = ${companyId}` : sql`WHERE TRUE`}
+            ORDER BY tally_godown
+        `
+
+        return {
+            godowns: rows.map((r) => ({
+                tallyGodown: r.tally_godown,
+                erpnextWarehouse: r.erpnext_warehouse,
+                mapped: r.erpnext_warehouse !== null,
+            })),
         }
     })
 

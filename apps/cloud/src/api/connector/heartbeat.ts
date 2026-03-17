@@ -22,6 +22,7 @@ const HeartbeatBodySchema = z.object({
     openCompany: z.string().optional(),
     pendingLocalJobs: z.number().int().min(0).default(0),
     lastTallySyncAt: z.string().optional(), // yyyymmddHHmmss
+    tallyCounts: z.record(z.number()).optional(), // e.g. { "Sales": 450, "Purchase": 120, "ledgers": 80 }
 })
 
 type AuthedRequest = FastifyRequest & { connectorIdentity?: ConnectorIdentity }
@@ -46,6 +47,13 @@ export const heartbeatRoute: FastifyPluginAsync = async (fastify) => {
           tally_version      = ${body.tallyVersion ?? null}
         WHERE id = ${body.companyId}
       `
+
+            if (body.tallyCounts) {
+                await sql`
+                    UPDATE companies SET tally_counts = ${sql.json(body.tallyCounts)}
+                    WHERE id = ${body.companyId}
+                `
+            }
 
             // Broadcast realtime status to all dashboard WebSocket clients.
             broadcaster.emit(body.companyId, 'connector:status', {

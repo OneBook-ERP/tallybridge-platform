@@ -30,7 +30,7 @@ export interface TallyStockJournalEntryInput {
  *  Strips " - ABBR" suffix that ERPNext appends; falls back to "Main Location". */
 function warehouseToGodown(warehouse: string, config: CompanyConfig): string {
     if (!warehouse) return 'Main Location'
-    const abbr = config.erpnextAbbr ?? 'CPT'
+    const abbr = config.erpnextAbbr ?? ''
     // Strip " - ABBR" suffix
     const stripped = warehouse.replace(new RegExp(`\\s*-\\s*${abbr}$`), '').trim()
     if (!stripped || stripped.toLowerCase() === 'stores') return 'Main Location'

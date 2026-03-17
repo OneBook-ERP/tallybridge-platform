@@ -10,6 +10,8 @@ import { ERPNextClient } from '../erpnext/client'
 import { sql } from '../db/db'
 import { logger } from '../lib/logger'
 import type { TallyVoucher, CompanyConfig } from '../types'
+import { stateFromGstin } from '../transform/utils'
+import { buildDefaultMappings } from '../transform/default-mappings'
 
 // Extended config carries per-company ERP credentials for the sync engine.
 export interface CompanyConfigWithCreds extends CompanyConfig {
@@ -49,7 +51,7 @@ async function loadConfig(companyId: string): Promise<CompanyConfigWithCreds | n
     FROM companies WHERE id = ${companyId}
   `
 
-    const abbr = company?.erpnext_abbr ?? 'CPT'
+    const abbr = company?.erpnext_abbr ?? ''
 
     // Resolve company billing address dynamically from ERPNext
     const gstin = company?.erpnext_gstin ?? ''
@@ -67,13 +69,21 @@ async function loadConfig(companyId: string): Promise<CompanyConfigWithCreds | n
         }
     }
 
-    // Load bank/cash ledger names — used by account-resolver to prevent them being
-    // treated as Customer/Supplier via aggressive party detection.
-    const bankLedgerRows = await sql<{ tally_name: string }[]>`
-        SELECT tally_name FROM ledger_masters
-        WHERE company_id = ${companyId} AND ledger_type IN ('Bank', 'Cash')
+    // Load bank/cash ledger names + all ledger groups from ledger_masters.
+    // bankLedgers: prevents aggressive party fallback for bank/cash accounts.
+    // ledgerGroups: group-based default resolution (e.g. "Sales Accounts" → "Sales - ABBR").
+    const ledgerMasterRows = await sql<{ tally_name: string; tally_group: string | null; ledger_type: string | null }[]>`
+        SELECT tally_name, tally_group, ledger_type FROM ledger_masters
+        WHERE company_id = ${companyId}
     `
-    const bankLedgers = bankLedgerRows.map((r) => r.tally_name)
+    const bankLedgers: string[] = []
+    const ledgerGroups: Record<string, string> = {}
+    for (const r of ledgerMasterRows) {
+        if (r.ledger_type === 'Bank' || r.ledger_type === 'Cash') bankLedgers.push(r.tally_name)
+        if (r.tally_group) ledgerGroups[r.tally_name] = r.tally_group
+    }
+
+    const { groupDefaultMappings } = buildDefaultMappings(abbr)
 
     return {
         companyId,
@@ -83,13 +93,15 @@ async function loadConfig(companyId: string): Promise<CompanyConfigWithCreds | n
         erpnextApiKey: company?.erpnext_api_key ?? '',
         erpnextApiSecret: company?.erpnext_api_secret ?? '',
         currency: 'INR',
-        costCenter: `Main - ${abbr}`,
+        costCenter: abbr ? `Main - ${abbr}` : undefined,
         companyGstin: gstin,
         companyAddress,
-        defaultState: 'Tamil Nadu',
-        defaultWarehouse: `Stores - ${abbr}`,
+        defaultState: gstin ? (stateFromGstin(gstin) ?? '') : '',
+        defaultWarehouse: abbr ? `Stores - ${abbr}` : undefined,
         updateStock: true,
         bankLedgers,
+        ledgerGroups,
+        groupDefaultMappings,
         accountMappings: row.account_mappings ?? {},
         gstLedgerMappings: {
             output_cgst: row.gst_ledger_mappings?.output_cgst ?? '',
@@ -216,7 +228,7 @@ async function processMasterData(
         apiKey: config.erpnextApiKey,
         apiSecret: config.erpnextApiSecret,
     })
-    const abbr = config.erpnextAbbr ?? 'CPT'
+    const abbr = config.erpnextAbbr ?? ''
 
     for (const raw of records) {
         try {
@@ -225,7 +237,9 @@ async function processMasterData(
                 if (!name) continue
 
                 const parent = (raw.Parent ?? raw.parent ?? raw.PARENT ?? '') as string
-                const group = (raw.Group ?? raw.group ?? raw.GROUP ?? '') as string
+                // Tally sends the group name as PARENT on a ledger (e.g. "Sundry Debtors").
+                // There is no separate GROUP field — parent IS the group.
+                const group = parent
                 const gstin = (raw.GSTIN ?? raw.Gstin ?? raw.gstin ?? '') as string
                 const isParty = (raw.IsPartyLedger ?? raw.isPartyLedger ?? raw.ISPARTYLEDGER ?? false) as boolean
                 const openBal =
@@ -322,7 +336,7 @@ async function processMasterData(
                 // Default: godown name + " - " + companyAbbr
                 const name = (raw.Name ?? raw.name ?? raw.NAME ?? '') as string
                 if (!name) continue
-                const abbr = config.erpnextAbbr ?? 'CPT'
+                const abbr = config.erpnextAbbr ?? ''
                 const defaultWarehouse =
                     name.toLowerCase() === 'main location'
                         ? (config.defaultWarehouse ?? `Stores - ${abbr}`)
@@ -370,7 +384,7 @@ async function processMasterData(
                     uom: r.uom ?? 'Nos',
                 })),
                 config.erpnextCompany,
-                config.defaultWarehouse ?? `Stores - ${config.erpnextAbbr ?? 'CPT'}`,
+                config.defaultWarehouse ?? `Stores - ${config.erpnextAbbr ?? ''}`,
                 fyStart,
                 config.costCenter,
             )

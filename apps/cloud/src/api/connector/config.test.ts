@@ -167,3 +167,76 @@ describe('PUT /connector/config', () => {
         expect(queries.some((q: string) => q.includes('companies'))).toBe(true)
     })
 })
+
+// ── autoFetchAndSeedCompany unit tests ──────────────────────────────────────
+import { autoFetchAndSeedCompany } from './config'
+
+const mockFetch = vi.fn()
+vi.stubGlobal('fetch', mockFetch)
+
+describe('autoFetchAndSeedCompany', () => {
+    beforeEach(() => {
+        vi.clearAllMocks()
+        mockSql.mockResolvedValue([])
+    })
+
+    it('fetches company details and returns abbr + gstin', async () => {
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            json: async () => ({ data: { abbr: 'ABC', tax_id: '27AAAAA0000A1Z5' } }),
+        })
+        const result = await autoFetchAndSeedCompany(
+            'company-uuid', 'https://erp.example.com', 'apikey', 'apisecret', 'Test Company',
+        )
+        expect(result.abbr).toBe('ABC')
+        expect(result.gstin).toBe('27AAAAA0000A1Z5')
+    })
+
+    it('calls ERPNext Company API with correct URL and auth', async () => {
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            json: async () => ({ data: { abbr: 'XYZ', tax_id: '' } }),
+        })
+        await autoFetchAndSeedCompany('cid', 'https://erp.test', 'key', 'secret', 'My Company')
+        const [url, opts] = mockFetch.mock.calls[0] as [string, RequestInit]
+        expect(url).toContain('/api/resource/Company/My%20Company')
+        expect((opts.headers as Record<string, string>)['Authorization']).toBe('token key:secret')
+    })
+
+    it('throws when ERPNext returns non-ok status', async () => {
+        mockFetch.mockResolvedValueOnce({ ok: false, status: 403 })
+        await expect(
+            autoFetchAndSeedCompany('cid', 'https://erp.test', 'k', 's', 'Test'),
+        ).rejects.toThrow('ERPNext Company fetch failed: 403')
+    })
+
+    it('seeds config_profiles when abbr is non-empty', async () => {
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            json: async () => ({ data: { abbr: 'TCS', tax_id: '' } }),
+        })
+        await autoFetchAndSeedCompany('cid', 'https://erp.test', 'k', 's', 'Co')
+        // UPDATE companies + UPDATE config_profiles = 2 sql calls minimum
+        expect(mockSql.mock.calls.length).toBeGreaterThanOrEqual(2)
+    })
+
+    it('skips config_profiles seed when abbr is empty', async () => {
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            json: async () => ({ data: { abbr: '', tax_id: '' } }),
+        })
+        await autoFetchAndSeedCompany('cid', 'https://erp.test', 'k', 's', 'Co')
+        // Only UPDATE companies — no config_profiles seed
+        expect(mockSql.mock.calls.length).toBe(1)
+    })
+
+    it('returns empty abbr and gstin when data fields are missing', async () => {
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            json: async () => ({ data: {} }),
+        })
+        const result = await autoFetchAndSeedCompany('cid', 'https://erp.test', 'k', 's', 'Co')
+        expect(result.abbr).toBe('')
+        expect(result.gstin).toBe('')
+    })
+})

@@ -13,6 +13,7 @@ import { z } from 'zod'
 import { requireConnectorAuth, type ConnectorIdentity } from '../../auth/machine-tokens'
 import { sql } from '../../db/db'
 import { logger } from '../../lib/logger'
+import { buildDefaultMappings } from '../../transform/default-mappings'
 
 const ConfigBodySchema = z.object({
     companyId: z.string().uuid(),
@@ -79,7 +80,107 @@ function normalizeGSTKeys(raw: Record<string, unknown>): Record<string, string> 
 
 type AuthedRequest = FastifyRequest & { connectorIdentity?: ConnectorIdentity }
 
+/**
+ * Fetch ERPNext Company document to get abbr + gstin, store them in companies,
+ * then seed default GST + voucher type mappings into config_profiles if they are empty.
+ * Called async after PUT /connector/config — does not block the response.
+ */
+export async function autoFetchAndSeedCompany(
+    companyId: string,
+    erpnextUrl: string,
+    apiKey: string,
+    apiSecret: string,
+    erpnextCompany: string,
+): Promise<{ abbr: string; gstin: string }> {
+    // Fetch company document from ERPNext
+    const res = await fetch(
+        `${erpnextUrl}/api/resource/Company/${encodeURIComponent(erpnextCompany)}?fields=["abbr","tax_id","default_currency","country"]`,
+        {
+            headers: {
+                Authorization: `token ${apiKey}:${apiSecret}`,
+                'Content-Type': 'application/json',
+            },
+        },
+    )
+    if (!res.ok) throw new Error(`ERPNext Company fetch failed: ${res.status}`)
+    const json = (await res.json()) as { data?: { abbr?: string; tax_id?: string } }
+    const abbr = json.data?.abbr ?? ''
+    const gstin = json.data?.tax_id ?? ''
+
+    // Persist abbr + gstin into companies (only if not already set)
+    await sql`
+        UPDATE companies SET
+            erpnext_abbr  = CASE WHEN erpnext_abbr  IS NULL OR erpnext_abbr  = '' THEN ${abbr}  ELSE erpnext_abbr  END,
+            erpnext_gstin = CASE WHEN erpnext_gstin IS NULL OR erpnext_gstin = '' THEN ${gstin} ELSE erpnext_gstin END
+        WHERE id = ${companyId}
+    `
+
+    // Seed default GST + voucher type mappings if the columns are still empty/null.
+    // This gives new companies working defaults without any manual configuration.
+    if (abbr) {
+        const defaults = buildDefaultMappings(abbr)
+        await sql`
+            UPDATE config_profiles SET
+                gst_ledger_mappings   = CASE
+                    WHEN gst_ledger_mappings   IS NULL OR gst_ledger_mappings   = '{}'::jsonb
+                    THEN ${sql.json(defaults.gstLedgerMappings)}::jsonb
+                    ELSE gst_ledger_mappings
+                END,
+                voucher_type_mappings = CASE
+                    WHEN voucher_type_mappings IS NULL OR voucher_type_mappings = '{}'::jsonb
+                    THEN ${sql.json(defaults.voucherTypeMappings)}::jsonb
+                    ELSE voucher_type_mappings
+                END
+            WHERE company_id = ${companyId}
+        `
+        logger.info({ companyId, abbr, gstin }, 'Auto-seeded default mappings from ERPNext company details')
+    }
+
+    return { abbr, gstin }
+}
+
 export const configRoute: FastifyPluginAsync = async (fastify) => {
+    // GET /connector/config — read mappings for the connector's company
+    fastify.get<{ Querystring: { companyId: string } }>(
+        '/connector/config',
+        { preHandler: [requireConnectorAuth] },
+        async (request: AuthedRequest, reply) => {
+            const companyId = request.connectorIdentity?.companyId
+            if (!companyId) {
+                return reply.code(403).send({ error: 'FORBIDDEN', message: 'No company identity' })
+            }
+
+            const [profile] = await sql<
+                {
+                    account_mappings: Record<string, string>
+                    gst_ledger_mappings: Record<string, string>
+                    voucher_type_mappings: Record<string, unknown>
+                }[]
+            >`
+                SELECT account_mappings, gst_ledger_mappings, voucher_type_mappings
+                FROM config_profiles WHERE company_id = ${companyId}
+            `
+
+            const godownRows = await sql<{ tally_godown: string; erpnext_warehouse: string }[]>`
+                SELECT tally_godown, erpnext_warehouse
+                FROM godown_warehouse_mapping
+                WHERE company_id = ${companyId}
+                  AND erpnext_warehouse IS NOT NULL
+            `
+            const godownWarehouseMappings: Record<string, string> = {}
+            for (const row of godownRows) {
+                godownWarehouseMappings[row.tally_godown] = row.erpnext_warehouse
+            }
+
+            return reply.send({
+                accountMappings: profile?.account_mappings ?? {},
+                gstLedgerMappings: profile?.gst_ledger_mappings ?? {},
+                voucherTypeMappings: profile?.voucher_type_mappings ?? {},
+                godownWarehouseMappings,
+            })
+        },
+    )
+
     fastify.put<{ Body: z.infer<typeof ConfigBodySchema> }>(
         '/connector/config',
         { preHandler: [requireConnectorAuth] },
@@ -129,6 +230,21 @@ export const configRoute: FastifyPluginAsync = async (fastify) => {
                         erpnext_cost_center = COALESCE(${body.erpnextCostCenter ?? null}, erpnext_cost_center)
                     WHERE id = ${body.companyId}
                 `
+
+                // Auto-fetch ERPNext company details (abbr, gstin) and seed defaults.
+                // Awaited so the connector can immediately call GET /connector/config
+                // and receive the seeded GST + voucher type mappings in the same cycle.
+                const url = body.erpnextUrl
+                const key = body.erpnextApiKey
+                const secret = body.erpnextApiSecret
+                const company = body.erpnextCompany
+                if (url && key && secret && company) {
+                    try {
+                        await autoFetchAndSeedCompany(body.companyId, url, key, secret, company)
+                    } catch (err) {
+                        logger.warn({ companyId: body.companyId, err }, 'Auto-fetch ERPNext company details failed')
+                    }
+                }
             }
 
             logger.info({ companyId: body.companyId }, 'Connector config updated')

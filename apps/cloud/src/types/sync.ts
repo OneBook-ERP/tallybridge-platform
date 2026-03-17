@@ -45,6 +45,10 @@ export interface CompanyConfig {
     updateStock?: boolean // if true (default), set update_stock=1 on inventory invoices
     costCenter?: string // e.g. "Main - AC"
     bankLedgers?: string[] // Tally ledger names classified as Bank/Cash — prevents party fallback in resolver
+    /** ledgerName → Tally group name (e.g. "HDFC BANK" → "Bank Accounts") loaded from ledger_masters */
+    ledgerGroups?: Record<string, string>
+    /** Tally group name → ERPNext account name (e.g. "Sales Accounts" → "Sales - CPT") from default-mappings */
+    groupDefaultMappings?: Record<string, string>
     accountMappings: AccountMapping
     gstLedgerMappings: GSTLedgerMapping
     voucherTypeMappings: VoucherTypeMapping

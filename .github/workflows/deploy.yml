@@ -66,20 +66,23 @@ jobs:
     permissions:
       packages: read
     steps:
+      # Checkout repo for config files (Caddyfile, docker-compose)
+      - uses: actions/checkout@v4
+
       # Download frontend build
       - uses: actions/download-artifact@v4
         with:
           name: frontend-dist
           path: frontend-dist/
 
-      # Copy frontend to VM
-      - name: Upload frontend to VM
+      # Copy frontend + config files to VM
+      - name: Upload files to VM
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.VM_HOST }}
           username: ${{ secrets.VM_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
-          source: frontend-dist/*
+          source: frontend-dist/*,Caddyfile,docker-compose.prod.yml
           target: /opt/tallybridge/
           overwrite: true
 
@@ -102,9 +105,9 @@ jobs:
             # Pull the pre-built image (no building on VM)
             docker pull ghcr.io/onebook-erp/tallybridge-cloud:latest
 
-            # Restart only the cloud container with new image
+            # Restart all containers (picks up config changes)
             cd /opt/tallybridge
-            docker compose -f docker-compose.prod.yml up -d cloud
+            docker compose -f docker-compose.prod.yml up -d --force-recreate
 
             # Verify health (retry up to 30s for migrations + startup)
             for i in $(seq 1 6); do
