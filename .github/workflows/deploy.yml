@@ -64,6 +64,7 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       packages: read
     steps:
       # Checkout repo for config files (Caddyfile, docker-compose)
