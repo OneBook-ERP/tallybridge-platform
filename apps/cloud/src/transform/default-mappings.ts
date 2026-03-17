@@ -68,8 +68,8 @@ export function buildDefaultMappings(abbr: string): DefaultMappings {
         'Current Liabilities': `Current Liabilities${s}`,
         'Loans & Advances (Liability)': `Loans and Advances (Liability)${s}`,
         // Capital & Equity
-        "Capital Account": `Capital Account${s}`,
-        "Reserves & Surplus": `Reserves and Surplus${s}`,
+        'Capital Account': `Capital Account${s}`,
+        'Reserves & Surplus': `Reserves and Surplus${s}`,
     }
 
     return { gstLedgerMappings, voucherTypeMappings, groupDefaultMappings }
@@ -88,7 +88,7 @@ export const TALLY_GROUP_ROOT_TYPE: Record<string, 'Asset' | 'Liability' | 'Inco
     'Fixed Assets': 'Asset',
     'Current Assets': 'Asset',
     'Stock-in-Hand': 'Asset',
-    'Investments': 'Asset',
+    Investments: 'Asset',
     'Misc. Expenses (Asset)': 'Asset',
 
     // Liabilities
@@ -96,7 +96,7 @@ export const TALLY_GROUP_ROOT_TYPE: Record<string, 'Asset' | 'Liability' | 'Inco
     'Duties & Taxes': 'Liability',
     'Current Liabilities': 'Liability',
     'Loans & Advances (Liability)': 'Liability',
-    'Provisions': 'Liability',
+    Provisions: 'Liability',
     'Bank OD Accounts': 'Liability',
 
     // Income
@@ -110,17 +110,15 @@ export const TALLY_GROUP_ROOT_TYPE: Record<string, 'Asset' | 'Liability' | 'Inco
     'Indirect Expenses': 'Expense',
 
     // Equity
-    "Capital Account": 'Equity',
-    "Reserves & Surplus": 'Equity',
-    "Retained Earnings": 'Equity',
+    'Capital Account': 'Equity',
+    'Reserves & Surplus': 'Equity',
+    'Retained Earnings': 'Equity',
 }
 
 /**
  * Returns the root type for a given Tally ledger group.
  * Falls back to 'Expense' for unknown groups (safest default for unmapped accounts).
  */
-export function groupRootType(
-    group: string,
-): 'Asset' | 'Liability' | 'Income' | 'Expense' | 'Equity' {
+export function groupRootType(group: string): 'Asset' | 'Liability' | 'Income' | 'Expense' | 'Equity' {
     return TALLY_GROUP_ROOT_TYPE[group] ?? 'Expense'
 }

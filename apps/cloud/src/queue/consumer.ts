@@ -72,7 +72,9 @@ async function loadConfig(companyId: string): Promise<CompanyConfigWithCreds | n
     // Load bank/cash ledger names + all ledger groups from ledger_masters.
     // bankLedgers: prevents aggressive party fallback for bank/cash accounts.
     // ledgerGroups: group-based default resolution (e.g. "Sales Accounts" → "Sales - ABBR").
-    const ledgerMasterRows = await sql<{ tally_name: string; tally_group: string | null; ledger_type: string | null }[]>`
+    const ledgerMasterRows = await sql<
+        { tally_name: string; tally_group: string | null; ledger_type: string | null }[]
+    >`
         SELECT tally_name, tally_group, ledger_type FROM ledger_masters
         WHERE company_id = ${companyId}
     `

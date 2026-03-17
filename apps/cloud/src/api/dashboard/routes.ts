@@ -363,7 +363,11 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
         let tallyCountsUpdatedAt: string | null = null
         if (companyId) {
             const [co] = await sql<
-                { erpnext_company: string; tally_counts: Record<string, number> | null; last_heartbeat_at: string | null }[]
+                {
+                    erpnext_company: string
+                    tally_counts: Record<string, number> | null
+                    last_heartbeat_at: string | null
+                }[]
             >`SELECT erpnext_company, tally_counts, last_heartbeat_at FROM companies WHERE id = ${companyId}`
             erpnextCompany = co?.erpnext_company ?? null
             tallyCountsRaw = co?.tally_counts ?? null
@@ -428,22 +432,22 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
             const tc = tallyCountsRaw
             switch (doctype) {
                 case 'Sales Invoice':
-                    return (tc['Sales'] ?? tc['Sales Invoice'] ?? null)
+                    return tc['Sales'] ?? tc['Sales Invoice'] ?? null
                 case 'Purchase Invoice':
-                    return (tc['Purchase'] ?? tc['Purchase Invoice'] ?? null)
+                    return tc['Purchase'] ?? tc['Purchase Invoice'] ?? null
                 case 'Payment Entry': {
                     const pay = tc['Payment'] ?? 0
                     const rec = tc['Receipt'] ?? 0
                     return pay + rec > 0 ? pay + rec : (tc['Payment Entry'] ?? null)
                 }
                 case 'Journal Entry':
-                    return (tc['Journal'] ?? tc['Journal Entry'] ?? null)
+                    return tc['Journal'] ?? tc['Journal Entry'] ?? null
                 case 'Stock Entry':
-                    return (tc['Stock Journal'] ?? tc['Stock Entry'] ?? null)
+                    return tc['Stock Journal'] ?? tc['Stock Entry'] ?? null
                 case 'Customer':
-                    return (tc['ledger_type_Sundry Debtors'] ?? tc['customers'] ?? null)
+                    return tc['ledger_type_Sundry Debtors'] ?? tc['customers'] ?? null
                 case 'Supplier':
-                    return (tc['ledger_type_Sundry Creditors'] ?? tc['suppliers'] ?? null)
+                    return tc['ledger_type_Sundry Creditors'] ?? tc['suppliers'] ?? null
                 default:
                     return null
             }

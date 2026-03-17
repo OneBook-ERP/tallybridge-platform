@@ -186,7 +186,11 @@ describe('autoFetchAndSeedCompany', () => {
             json: async () => ({ data: { abbr: 'ABC', tax_id: '27AAAAA0000A1Z5' } }),
         })
         const result = await autoFetchAndSeedCompany(
-            'company-uuid', 'https://erp.example.com', 'apikey', 'apisecret', 'Test Company',
+            'company-uuid',
+            'https://erp.example.com',
+            'apikey',
+            'apisecret',
+            'Test Company',
         )
         expect(result.abbr).toBe('ABC')
         expect(result.gstin).toBe('27AAAAA0000A1Z5')
@@ -205,9 +209,9 @@ describe('autoFetchAndSeedCompany', () => {
 
     it('throws when ERPNext returns non-ok status', async () => {
         mockFetch.mockResolvedValueOnce({ ok: false, status: 403 })
-        await expect(
-            autoFetchAndSeedCompany('cid', 'https://erp.test', 'k', 's', 'Test'),
-        ).rejects.toThrow('ERPNext Company fetch failed: 403')
+        await expect(autoFetchAndSeedCompany('cid', 'https://erp.test', 'k', 's', 'Test')).rejects.toThrow(
+            'ERPNext Company fetch failed: 403',
+        )
     })
 
     it('seeds config_profiles when abbr is non-empty', async () => {
