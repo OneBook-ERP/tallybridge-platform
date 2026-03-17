@@ -10,7 +10,7 @@
  *  5. Update sync_records
  *  6. Write audit log entry
  */
-import { sql } from '../db/db'
+import { sql, jsonb } from '../db/db'
 import { ERPNextClient, erpClient as defaultErpClient } from '../erpnext/client'
 import { transformVoucher } from '../transform/tally-to-erp'
 import { contentHash } from '../transform/utils'
@@ -548,7 +548,7 @@ export async function processTallyVoucher(voucher: TallyVoucher, config: ConfigW
     // 6. Audit log
     await sql`
     INSERT INTO audit_log (company_id, actor, event_type, document_ref, payload_after)
-    VALUES (${config.companyId}, 'system', 'sync.tally_to_erp', ${`${doctype}:${erpName}`}, ${sql.json(result.doc)})
+    VALUES (${config.companyId}, 'system', 'sync.tally_to_erp', ${`${doctype}:${erpName}`}, ${jsonb(result.doc)})
   `
 
     if (result.warnings.length > 0) {

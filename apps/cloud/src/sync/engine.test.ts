@@ -55,7 +55,7 @@ const { mockSql, mockIsOwnWrite, mockCheckConflict, mockRecordConflict, mockErpC
 vi.mock('../db/db', () => {
     const fn = (...args: unknown[]) => mockSql(...args)
     fn.json = (val: unknown) => val
-    return { sql: fn }
+    return { sql: fn, jsonb: (val: unknown) => val }
 })
 vi.mock('./loop-guard', () => ({ isOwnWrite: (...args: unknown[]) => mockIsOwnWrite(...args) }))
 vi.mock('./conflict', () => ({

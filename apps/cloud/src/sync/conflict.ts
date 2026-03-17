@@ -6,7 +6,7 @@
  *
  * Detection: tally_hash changed AND erpnext_hash changed vs stored hashes.
  */
-import { sql } from '../db/db'
+import { sql, jsonb } from '../db/db'
 import { broadcaster } from '../realtime/broadcaster'
 import { logger } from '../lib/logger'
 import type { TallyVoucher } from '../types'
@@ -87,7 +87,7 @@ export async function recordConflict(
 ): Promise<void> {
     await sql`
     INSERT INTO conflict_log (company_id, tally_guid, tally_snapshot, erpnext_snapshot)
-    VALUES (${companyId}, ${guid}, ${sql.json(tallySnapshot)}, ${sql.json(erpnextSnapshot)})
+    VALUES (${companyId}, ${guid}, ${jsonb(tallySnapshot)}, ${jsonb(erpnextSnapshot)})
     ON CONFLICT DO NOTHING
   `
 

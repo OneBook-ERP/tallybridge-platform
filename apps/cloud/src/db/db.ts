@@ -13,6 +13,13 @@ export const sql = postgres(env.DATABASE_URL, {
 
 export type SQL = typeof sql
 
+/**
+ * Wrapper for sql.json() that accepts any serializable value.
+ * postgres.js JSONValue type is stricter than what the runtime actually handles.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const jsonb = (value: unknown) => sql.json(value as any)
+
 /** Verify the database connection on startup. */
 export async function checkConnection(): Promise<void> {
     await sql`SELECT 1`

@@ -16,7 +16,7 @@ const { mockSql, mockBroadcaster } = vi.hoisted(() => {
 vi.mock('../db/db', () => {
     const fn = (...args: unknown[]) => mockSql(...args)
     fn.json = (val: unknown) => val
-    return { sql: fn }
+    return { sql: fn, jsonb: (val: unknown) => val }
 })
 vi.mock('../realtime/broadcaster', () => ({ broadcaster: mockBroadcaster }))
 vi.mock('../lib/logger', () => ({
