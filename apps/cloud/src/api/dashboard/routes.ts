@@ -389,9 +389,16 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
         // Delete all child tables explicitly, then the company row.
         // Use individual awaited queries (not transaction — audit_log trigger needs special handling).
         const tables = [
-            'sync_records', 'exception_register', 'conflict_log', 'job_log',
-            'config_profiles', 'ledger_masters', 'stock_item_masters',
-            'godown_warehouse_mapping', 'voucher_type_mapping', 'admin_company_access',
+            'sync_records',
+            'exception_register',
+            'conflict_log',
+            'job_log',
+            'config_profiles',
+            'ledger_masters',
+            'stock_item_masters',
+            'godown_warehouse_mapping',
+            'voucher_type_mapping',
+            'admin_company_access',
         ]
         for (const table of tables) {
             await sql.unsafe(`DELETE FROM ${table} WHERE company_id = $1`, [companyId])
