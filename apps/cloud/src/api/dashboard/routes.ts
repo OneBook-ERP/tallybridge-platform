@@ -90,29 +90,32 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
     })
 
     // GET /dashboard/exceptions?companyId=...&limit=50&offset=0 — paginated exceptions
-    app.get<{ Querystring: { companyId?: string; limit?: string; offset?: string } }>('/dashboard/exceptions', async (req) => {
-        const identity = (req as AuthedRequest).adminIdentity
-        const companyId = scopeCompany(identity, req.query.companyId)
-        const limit = Math.min(parseInt(req.query.limit || '50', 10), 200)
-        const offset = Math.max(parseInt(req.query.offset || '0', 10), 0)
+    app.get<{ Querystring: { companyId?: string; limit?: string; offset?: string } }>(
+        '/dashboard/exceptions',
+        async (req) => {
+            const identity = (req as AuthedRequest).adminIdentity
+            const companyId = scopeCompany(identity, req.query.companyId)
+            const limit = Math.min(parseInt(req.query.limit || '50', 10), 200)
+            const offset = Math.max(parseInt(req.query.offset || '0', 10), 0)
 
-        const whereClause = companyId
-            ? sql`WHERE company_id = ${companyId}`
-            : identity.companyIds.length > 0
-              ? sql`WHERE company_id = ANY(${identity.companyIds})`
-              : sql``
+            const whereClause = companyId
+                ? sql`WHERE company_id = ${companyId}`
+                : identity.companyIds.length > 0
+                  ? sql`WHERE company_id = ANY(${identity.companyIds})`
+                  : sql``
 
-        const [{ total }] = await sql<{ total: number }[]>`
+            const [{ total }] = await sql<{ total: number }[]>`
             SELECT COUNT(*)::int AS total FROM exception_register ${whereClause}
         `
-        const rows = await sql`
+            const rows = await sql`
             SELECT id, tier, document_ref, error_code, error_message, created_at, resolved_at
             FROM exception_register ${whereClause}
             ORDER BY created_at DESC
             LIMIT ${limit} OFFSET ${offset}
         `
-        return { exceptions: rows, total, limit, offset }
-    })
+            return { exceptions: rows, total, limit, offset }
+        },
+    )
 
     // GET /dashboard/audit-log?companyId=...&limit=50 — recent audit entries
     app.get<{ Querystring: { companyId?: string; limit?: string } }>('/dashboard/audit-log', async (req) => {

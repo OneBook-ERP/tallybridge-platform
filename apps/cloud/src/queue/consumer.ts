@@ -135,11 +135,24 @@ export function startSyncWorker(): Worker<SyncJobData, void, SyncJobName> {
 
             if (recordType === 'ledger') {
                 const groupAncestry = buildGroupAncestry((job.data.ledgerGroups ?? []) as unknown[])
-                await processMasterData(companyId, 'ledger', records as Record<string, unknown>[], config, groupAncestry)
+                await processMasterData(
+                    companyId,
+                    'ledger',
+                    records as Record<string, unknown>[],
+                    config,
+                    groupAncestry,
+                )
                 return
             }
             if (recordType === 'stockItem') {
-                await processMasterData(companyId, 'stockItem', records as Record<string, unknown>[], config, new Map(), job.data.fromTimestamp)
+                await processMasterData(
+                    companyId,
+                    'stockItem',
+                    records as Record<string, unknown>[],
+                    config,
+                    new Map(),
+                    job.data.fromTimestamp,
+                )
                 return
             }
             if (recordType === 'stockGroup') {

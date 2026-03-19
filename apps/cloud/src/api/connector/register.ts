@@ -85,9 +85,15 @@ export const registerRoute: FastifyPluginAsync = async (fastify) => {
                         SET consumed_at = now(), company_id = ${companyId}
                         WHERE id = ${tokenRow.id}
                     `
-                    logger.info({ companyId, adminId: tokenRow.admin_id }, 'Company linked to admin via registration token')
+                    logger.info(
+                        { companyId, adminId: tokenRow.admin_id },
+                        'Company linked to admin via registration token',
+                    )
                 } else {
-                    logger.warn({ token: body.registrationToken }, 'Registration token invalid or expired — company not linked to admin')
+                    logger.warn(
+                        { token: body.registrationToken },
+                        'Registration token invalid or expired — company not linked to admin',
+                    )
                 }
             }
 

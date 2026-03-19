@@ -158,12 +158,19 @@ export class ERPNextClient {
 
     /** Ensure a Customer exists in ERPNext with correct GSTIN; create or update if needed. */
     async ensureCustomer(name: string, gstin?: string, customerGroup?: string, tallyGuid?: string): Promise<void> {
-        let existing: { gstin?: string; gst_category?: string; customer_group?: string; custom_tally_guid?: string } | null = null
+        let existing: {
+            gstin?: string
+            gst_category?: string
+            customer_group?: string
+            custom_tally_guid?: string
+        } | null = null
         try {
-            existing = await this.getDoc<{ gstin?: string; gst_category?: string; customer_group?: string; custom_tally_guid?: string }>(
-                'Customer',
-                name,
-            )
+            existing = await this.getDoc<{
+                gstin?: string
+                gst_category?: string
+                customer_group?: string
+                custom_tally_guid?: string
+            }>('Customer', name)
         } catch (err) {
             if (err instanceof ERPNextError && err.status === 404) {
                 await this.createDoc('Customer', {
@@ -208,12 +215,19 @@ export class ERPNextClient {
 
     /** Ensure a Supplier exists in ERPNext with correct GSTIN; create or update if needed. */
     async ensureSupplier(name: string, gstin?: string, supplierGroup?: string, tallyGuid?: string): Promise<void> {
-        let existing: { gstin?: string; gst_category?: string; supplier_group?: string; custom_tally_guid?: string } | null = null
+        let existing: {
+            gstin?: string
+            gst_category?: string
+            supplier_group?: string
+            custom_tally_guid?: string
+        } | null = null
         try {
-            existing = await this.getDoc<{ gstin?: string; gst_category?: string; supplier_group?: string; custom_tally_guid?: string }>(
-                'Supplier',
-                name,
-            )
+            existing = await this.getDoc<{
+                gstin?: string
+                gst_category?: string
+                supplier_group?: string
+                custom_tally_guid?: string
+            }>('Supplier', name)
         } catch (err) {
             if (err instanceof ERPNextError && err.status === 404) {
                 await this.createDoc('Supplier', {
