@@ -125,15 +125,15 @@ function ConfigurationTab({ companyId }: { companyId: string }) {
     const [groupDefaultMappings, setGroupDefaultMappings] = useState<Record<string, string>>({})
     const [activeRootType, setActiveRootType] = useState<'Asset' | 'Liability' | 'Income' | 'Expense' | 'All'>('All')
 
-    // GST mappings state
-    const [gstFields, setGstFields] = useState({
-        output_cgst: '',
-        output_sgst: '',
-        output_igst: '',
-        input_cgst: '',
-        input_sgst: '',
-        input_igst: '',
-    })
+    // GST mappings state — dynamic rows (key = slug like output_cgst, value = ERPNext account)
+    const [gstRows, setGstRows] = useState<{ key: string; value: string }[]>([
+        { key: 'output_cgst', value: '' },
+        { key: 'output_sgst', value: '' },
+        { key: 'output_igst', value: '' },
+        { key: 'input_cgst', value: '' },
+        { key: 'input_sgst', value: '' },
+        { key: 'input_igst', value: '' },
+    ])
     const [gstSaving, setGstSaving] = useState(false)
     const [gstSaveMsg, setGstSaveMsg] = useState<string | null>(null)
 
@@ -160,16 +160,25 @@ function ConfigurationTab({ companyId }: { companyId: string }) {
                     Object.entries(cfg.accountMappings || {}).map(([tally, erp]) => ({ tally, erp: erp as string })),
                 )
                 setGroupDefaultMappings(cfg.groupDefaultMappings || {})
-                // Populate GST fields
+                // Populate GST rows from saved mappings
                 const gm = cfg.gstLedgerMappings || {}
-                setGstFields({
-                    output_cgst: (gm['output_cgst'] as string) || '',
-                    output_sgst: (gm['output_sgst'] as string) || '',
-                    output_igst: (gm['output_igst'] as string) || '',
-                    input_cgst: (gm['input_cgst'] as string) || '',
-                    input_sgst: (gm['input_sgst'] as string) || '',
-                    input_igst: (gm['input_igst'] as string) || '',
-                })
+                const defaultKeys = [
+                    'output_cgst',
+                    'output_sgst',
+                    'output_igst',
+                    'input_cgst',
+                    'input_sgst',
+                    'input_igst',
+                ]
+                const rows: { key: string; value: string }[] = defaultKeys.map((k) => ({
+                    key: k,
+                    value: (gm[k] as string) || '',
+                }))
+                // Add any extra custom keys not in defaults
+                for (const [k, v] of Object.entries(gm)) {
+                    if (!defaultKeys.includes(k)) rows.push({ key: k, value: v as string })
+                }
+                setGstRows(rows)
                 // Populate voucher rows
                 setVoucherRows(
                     Object.entries(cfg.voucherTypeMappings || {}).map(([tally, erp]) => ({
@@ -231,7 +240,12 @@ function ConfigurationTab({ companyId }: { companyId: string }) {
         try {
             await apiFetch('/dashboard/config', {
                 method: 'PATCH',
-                body: JSON.stringify({ companyId, gstLedgerMappings: gstFields }),
+                body: JSON.stringify({
+                    companyId,
+                    gstLedgerMappings: Object.fromEntries(
+                        gstRows.filter((r) => r.key.trim()).map((r) => [r.key.trim(), r.value.trim()]),
+                    ),
+                }),
             })
             setGstSaveMsg('GST mappings saved.')
         } catch (e) {
@@ -543,35 +557,81 @@ function ConfigurationTab({ companyId }: { companyId: string }) {
                 {/* B. GST Ledger Mappings */}
                 {activeSection === 'gst' && (
                     <div className="bg-white rounded-xl shadow-sm border p-6 space-y-5">
-                        <div>
-                            <h3 className="font-semibold text-lg">GST Ledger Mappings</h3>
-                            <p className="text-sm text-gray-500 mt-0.5">
-                                Map Tally GST ledgers to ERPNext tax accounts.
-                            </p>
+                        <div className="flex items-start justify-between gap-4">
+                            <div>
+                                <h3 className="font-semibold text-lg">GST Ledger Mappings</h3>
+                                <p className="text-sm text-gray-500 mt-0.5">
+                                    Map Tally GST ledger keys to ERPNext tax account names. Add custom rows for
+                                    non-standard GST ledgers.
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setGstRows((prev) => [...prev, { key: '', value: '' }])}
+                                className="shrink-0 px-3 py-1.5 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                            >
+                                + Add Row
+                            </button>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {(
-                                [
-                                    { key: 'output_cgst', label: 'Output CGST' },
-                                    { key: 'output_sgst', label: 'Output SGST' },
-                                    { key: 'output_igst', label: 'Output IGST' },
-                                    { key: 'input_cgst', label: 'Input CGST' },
-                                    { key: 'input_sgst', label: 'Input SGST' },
-                                    { key: 'input_igst', label: 'Input IGST' },
-                                ] as { key: keyof typeof gstFields; label: string }[]
-                            ).map(({ key, label }) => (
-                                <div key={key}>
-                                    <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
-                                    <input
-                                        type="text"
-                                        value={gstFields[key]}
-                                        onChange={(e) => setGstFields((prev) => ({ ...prev, [key]: e.target.value }))}
-                                        placeholder="ERPNext account name"
-                                        className="w-full px-3 py-2 border rounded-lg text-sm"
-                                    />
-                                </div>
-                            ))}
+                        <div className="overflow-x-auto">
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">
+                                            Key
+                                        </th>
+                                        <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">
+                                            ERPNext Tax Account
+                                        </th>
+                                        <th className="px-4 py-2 w-12"></th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-100">
+                                    {gstRows.map((row, i) => (
+                                        <tr key={i}>
+                                            <td className="px-4 py-2">
+                                                <input
+                                                    type="text"
+                                                    value={row.key}
+                                                    onChange={(e) =>
+                                                        setGstRows((prev) => {
+                                                            const next = [...prev]
+                                                            next[i] = { ...next[i], key: e.target.value }
+                                                            return next
+                                                        })
+                                                    }
+                                                    placeholder="e.g. output_cess"
+                                                    className="w-full px-2 py-1.5 border rounded text-sm font-mono"
+                                                />
+                                            </td>
+                                            <td className="px-4 py-2">
+                                                <input
+                                                    type="text"
+                                                    value={row.value}
+                                                    onChange={(e) =>
+                                                        setGstRows((prev) => {
+                                                            const next = [...prev]
+                                                            next[i] = { ...next[i], value: e.target.value }
+                                                            return next
+                                                        })
+                                                    }
+                                                    placeholder="ERPNext account name"
+                                                    className="w-full px-2 py-1.5 border rounded text-sm"
+                                                />
+                                            </td>
+                                            <td className="px-4 py-2 text-center">
+                                                <button
+                                                    onClick={() => setGstRows((prev) => prev.filter((_, j) => j !== i))}
+                                                    className="text-red-400 hover:text-red-600 text-sm"
+                                                    title="Remove"
+                                                >
+                                                    ×
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
                         </div>
 
                         <div className="flex items-center gap-3">
@@ -712,11 +772,61 @@ function ConfigurationTab({ companyId }: { companyId: string }) {
                             </p>
                         </div>
 
+                        {/* Manual add godown */}
+                        <div className="flex gap-2 items-end">
+                            <div className="flex-1">
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Tally Godown</label>
+                                <input
+                                    type="text"
+                                    id="new-godown-name"
+                                    placeholder="e.g. Main Location"
+                                    className="w-full px-2 py-1.5 border rounded text-sm"
+                                />
+                            </div>
+                            <div className="flex-1">
+                                <label className="block text-xs font-medium text-gray-600 mb-1">
+                                    ERPNext Warehouse
+                                </label>
+                                <input
+                                    type="text"
+                                    id="new-godown-warehouse"
+                                    placeholder="e.g. Main Store - CPT"
+                                    className="w-full px-2 py-1.5 border rounded text-sm"
+                                />
+                            </div>
+                            <button
+                                onClick={() => {
+                                    const nameInput = document.getElementById('new-godown-name') as HTMLInputElement
+                                    const whInput = document.getElementById('new-godown-warehouse') as HTMLInputElement
+                                    if (!nameInput?.value.trim()) return
+                                    const name = nameInput.value.trim()
+                                    setGodowns((prev) =>
+                                        prev.some((g) => g.tallyGodown === name)
+                                            ? prev
+                                            : [
+                                                  ...prev,
+                                                  {
+                                                      tallyGodown: name,
+                                                      erpnextWarehouse: whInput?.value.trim() || '',
+                                                      mapped: !!whInput?.value.trim(),
+                                                  },
+                                              ],
+                                    )
+                                    setGodownEdits((prev) => ({ ...prev, [name]: whInput?.value.trim() || '' }))
+                                    nameInput.value = ''
+                                    if (whInput) whInput.value = ''
+                                }}
+                                className="px-3 py-1.5 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shrink-0"
+                            >
+                                + Add
+                            </button>
+                        </div>
+
                         {godownLoading ? (
                             <div className="py-8 text-center text-gray-400 text-sm">Loading godowns...</div>
                         ) : godowns.length === 0 ? (
                             <div className="py-8 text-center text-gray-400 text-sm border rounded-lg">
-                                No godowns found. Sync master data from the connector first.
+                                No godowns found. Sync master data from the connector or add manually above.
                             </div>
                         ) : (
                             <div className="overflow-x-auto">
@@ -926,6 +1036,7 @@ export default function CloudDashboard() {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
     const [resetting, setResetting] = useState(false)
+    const [deleting, setDeleting] = useState(false)
     const [resetIncludeMasters, setResetIncludeMasters] = useState(false)
     const [reprocessing, setReprocessing] = useState<string | null>(null)
     const [openingStockLoading, setOpeningStockLoading] = useState(false)
@@ -942,6 +1053,16 @@ export default function CloudDashboard() {
     const [recordOffset, setRecordOffset] = useState(0)
     const [recordTotal, setRecordTotal] = useState(0)
     const PAGE_SIZE = 50
+    // Exception filter/search/sort
+    const [excSearch, setExcSearch] = useState('')
+    const [excFilterCode, setExcFilterCode] = useState<string>('all')
+    const [excFilterStatus, setExcFilterStatus] = useState<'open' | 'resolved' | 'all'>('open')
+    const [excSort, setExcSort] = useState<'newest' | 'oldest'>('newest')
+    // Activity log filter/search/sort
+    const [recSearch, setRecSearch] = useState('')
+    const [recFilterStatus, setRecFilterStatus] = useState<string>('all')
+    const [recFilterDoctype, setRecFilterDoctype] = useState<string>('all')
+    const [recSort, setRecSort] = useState<'newest' | 'oldest'>('newest')
 
     async function handleResetSync() {
         const mastersWarning = resetIncludeMasters
@@ -970,6 +1091,31 @@ export default function CloudDashboard() {
             }
         } finally {
             setResetting(false)
+        }
+    }
+
+    async function handleDeleteCompany() {
+        if (!selectedCompanyId) return
+        const name = selectedCompany?.tally_company_name || selectedCompanyId
+        if (
+            !confirm(
+                `PERMANENTLY DELETE "${name}" and ALL its data (sync records, exceptions, masters, config)?\n\nThis cannot be undone.`,
+            )
+        )
+            return
+        setDeleting(true)
+        try {
+            await apiFetch(`/dashboard/company?companyId=${selectedCompanyId}`, { method: 'DELETE' })
+            setCompanies((prev) => prev.filter((c) => c.id !== selectedCompanyId))
+            setSelectedCompanyId('')
+            setStats(null)
+            setRecords([])
+            setExceptions([])
+            setDataComparison(null)
+        } catch (e) {
+            alert('Delete failed: ' + (e instanceof Error ? e.message : String(e)))
+        } finally {
+            setDeleting(false)
         }
     }
 
@@ -1081,7 +1227,9 @@ export default function CloudDashboard() {
         const qs = `?companyId=${selectedCompanyId}`
         Promise.all([
             apiFetch<Stats>(`/dashboard/stats${qs}`),
-            apiFetch<{ records: SyncRecord[] }>(`/dashboard/sync-records${qs}&limit=${PAGE_SIZE}&offset=0`),
+            apiFetch<{ records: SyncRecord[]; total?: number }>(
+                `/dashboard/sync-records${qs}&limit=${PAGE_SIZE}&offset=0`,
+            ),
             apiFetch<{ exceptions: Exception[]; total: number }>(
                 `/dashboard/exceptions${qs}&limit=${PAGE_SIZE}&offset=0`,
             ),
@@ -1089,6 +1237,7 @@ export default function CloudDashboard() {
             .then(([s, r, e]) => {
                 setStats(s)
                 setRecords(r.records)
+                if (r.total !== undefined) setRecordTotal(r.total)
                 setExceptions(e.exceptions)
                 setExceptionTotal(e.total ?? 0)
             })
@@ -1127,11 +1276,12 @@ export default function CloudDashboard() {
                 .then(setStats)
                 .catch(() => {})
             // Refresh first page of records on sync progress
-            apiFetch<{ records: SyncRecord[] }>(
+            apiFetch<{ records: SyncRecord[]; total?: number }>(
                 `/dashboard/sync-records?companyId=${selectedCompanyId}&limit=${PAGE_SIZE}&offset=0`,
             )
                 .then((r) => {
                     setRecords(r.records)
+                    if (r.total !== undefined) setRecordTotal(r.total)
                     setRecordOffset(0)
                 })
                 .catch(() => {})
@@ -1196,6 +1346,50 @@ export default function CloudDashboard() {
     }
 
     const openExceptions = exceptions.filter((e) => !e.resolved_at)
+
+    const excErrorCodes = [...new Set(exceptions.map((e) => e.error_code))].sort()
+    const filteredExceptions = exceptions
+        .filter((e) => {
+            if (excFilterStatus === 'open' && e.resolved_at) return false
+            if (excFilterStatus === 'resolved' && !e.resolved_at) return false
+            if (excFilterCode !== 'all' && e.error_code !== excFilterCode) return false
+            if (excSearch) {
+                const q = excSearch.toLowerCase()
+                return (
+                    e.error_message.toLowerCase().includes(q) ||
+                    e.document_ref.toLowerCase().includes(q) ||
+                    e.error_code.toLowerCase().includes(q)
+                )
+            }
+            return true
+        })
+        .sort((a, b) =>
+            excSort === 'newest'
+                ? new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+                : new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+        )
+
+    const recStatuses = [...new Set(records.map((r) => r.sync_status))].sort()
+    const recDoctypes = [...new Set(records.map((r) => r.erpnext_doctype).filter(Boolean))].sort()
+    const filteredRecords = records
+        .filter((r) => {
+            if (recFilterStatus !== 'all' && r.sync_status !== recFilterStatus) return false
+            if (recFilterDoctype !== 'all' && r.erpnext_doctype !== recFilterDoctype) return false
+            if (recSearch) {
+                const q = recSearch.toLowerCase()
+                return (
+                    r.tally_guid.toLowerCase().includes(q) ||
+                    (r.erpnext_name || '').toLowerCase().includes(q) ||
+                    (r.erpnext_doctype || '').toLowerCase().includes(q)
+                )
+            }
+            return true
+        })
+        .sort((a, b) =>
+            recSort === 'newest'
+                ? new Date(b.last_synced_at).getTime() - new Date(a.last_synced_at).getTime()
+                : new Date(a.last_synced_at).getTime() - new Date(b.last_synced_at).getTime(),
+        )
 
     // Last config sync: use the selected company's heartbeat
     const selectedCompany = companies.find((c) => c.id === selectedCompanyId)
@@ -1675,6 +1869,47 @@ export default function CloudDashboard() {
                             )}
                         </div>
 
+                        {/* Search + Filter + Sort bar */}
+                        <div className="flex flex-wrap items-center gap-3 bg-white rounded-xl shadow-sm border px-4 py-3">
+                            <input
+                                type="text"
+                                placeholder="Search errors, refs..."
+                                value={excSearch}
+                                onChange={(e) => setExcSearch(e.target.value)}
+                                className="flex-1 min-w-[180px] px-3 py-1.5 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                            />
+                            <select
+                                value={excFilterCode}
+                                onChange={(e) => setExcFilterCode(e.target.value)}
+                                className="px-3 py-1.5 border rounded-lg text-sm bg-white"
+                            >
+                                <option value="all">All Codes</option>
+                                {excErrorCodes.map((c) => (
+                                    <option key={c} value={c}>
+                                        {c}
+                                    </option>
+                                ))}
+                            </select>
+                            <select
+                                value={excFilterStatus}
+                                onChange={(e) => setExcFilterStatus(e.target.value as 'open' | 'resolved' | 'all')}
+                                className="px-3 py-1.5 border rounded-lg text-sm bg-white"
+                            >
+                                <option value="open">Open</option>
+                                <option value="resolved">Resolved</option>
+                                <option value="all">All</option>
+                            </select>
+                            <select
+                                value={excSort}
+                                onChange={(e) => setExcSort(e.target.value as 'newest' | 'oldest')}
+                                className="px-3 py-1.5 border rounded-lg text-sm bg-white"
+                            >
+                                <option value="newest">Newest First</option>
+                                <option value="oldest">Oldest First</option>
+                            </select>
+                            <span className="text-xs text-slate-400">{filteredExceptions.length} results</span>
+                        </div>
+
                         {/* Group summary + reprocess buttons */}
                         {openExceptions.length > 0 &&
                             (() => {
@@ -1750,13 +1985,13 @@ export default function CloudDashboard() {
                                 )
                             })()}
 
-                        {openExceptions.length === 0 ? (
+                        {filteredExceptions.length === 0 ? (
                             <div className="bg-white rounded-xl shadow-sm border p-8 text-center text-gray-400">
-                                No open exceptions. All clear!
+                                {exceptions.length === 0 ? 'No exceptions.' : 'No matching exceptions.'}
                             </div>
                         ) : (
                             <div className="space-y-3">
-                                {openExceptions.map((exc) => (
+                                {filteredExceptions.map((exc) => (
                                     <ExceptionRow
                                         key={exc.id}
                                         exc={exc}
@@ -1807,9 +2042,56 @@ export default function CloudDashboard() {
                 {activeTab === 'activity' && (
                     <div className="space-y-6">
                         <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Sync Activity Log</h1>
+
+                        {/* Search + Filter + Sort bar */}
+                        <div className="flex flex-wrap items-center gap-3 bg-white rounded-xl shadow-sm border px-4 py-3">
+                            <input
+                                type="text"
+                                placeholder="Search GUID, ERPNext name..."
+                                value={recSearch}
+                                onChange={(e) => setRecSearch(e.target.value)}
+                                className="flex-1 min-w-[180px] px-3 py-1.5 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                            />
+                            <select
+                                value={recFilterStatus}
+                                onChange={(e) => setRecFilterStatus(e.target.value)}
+                                className="px-3 py-1.5 border rounded-lg text-sm bg-white"
+                            >
+                                <option value="all">All Statuses</option>
+                                {recStatuses.map((s) => (
+                                    <option key={s} value={s}>
+                                        {s}
+                                    </option>
+                                ))}
+                            </select>
+                            <select
+                                value={recFilterDoctype}
+                                onChange={(e) => setRecFilterDoctype(e.target.value)}
+                                className="px-3 py-1.5 border rounded-lg text-sm bg-white"
+                            >
+                                <option value="all">All DocTypes</option>
+                                {recDoctypes.map((d) => (
+                                    <option key={d} value={d}>
+                                        {d}
+                                    </option>
+                                ))}
+                            </select>
+                            <select
+                                value={recSort}
+                                onChange={(e) => setRecSort(e.target.value as 'newest' | 'oldest')}
+                                className="px-3 py-1.5 border rounded-lg text-sm bg-white"
+                            >
+                                <option value="newest">Newest First</option>
+                                <option value="oldest">Oldest First</option>
+                            </select>
+                            <span className="text-xs text-slate-400">{filteredRecords.length} results</span>
+                        </div>
+
                         <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-                            {records.length === 0 ? (
-                                <div className="p-8 text-center text-gray-400">No sync records yet.</div>
+                            {filteredRecords.length === 0 ? (
+                                <div className="p-8 text-center text-gray-400">
+                                    {records.length === 0 ? 'No sync records yet.' : 'No matching records.'}
+                                </div>
                             ) : (
                                 <table className="min-w-full divide-y divide-gray-200">
                                     <thead className="bg-gray-50 text-xs uppercase font-semibold text-gray-500">
@@ -1822,7 +2104,7 @@ export default function CloudDashboard() {
                                         </tr>
                                     </thead>
                                     <tbody className="bg-white divide-y divide-gray-200">
-                                        {records.map((r, i) => (
+                                        {filteredRecords.map((r, i) => (
                                             <tr key={i} className="hover:bg-gray-50">
                                                 <td className="px-6 py-3 text-sm text-gray-500">
                                                     {new Date(r.last_synced_at).toLocaleString()}
@@ -2056,6 +2338,13 @@ export default function CloudDashboard() {
                                 className="px-4 py-2 rounded-md text-sm font-semibold bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                             >
                                 {resetting ? 'Resetting…' : 'Reset Sync History'}
+                            </button>
+                            <button
+                                onClick={handleDeleteCompany}
+                                disabled={deleting || !selectedCompanyId}
+                                className="px-4 py-2 rounded-md text-sm font-semibold bg-red-800 text-white hover:bg-red-900 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                                {deleting ? 'Deleting…' : 'Delete Company'}
                             </button>
                         </div>
                     </div>

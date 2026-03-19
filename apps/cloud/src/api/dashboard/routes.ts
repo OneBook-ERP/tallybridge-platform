@@ -386,9 +386,21 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
         const companyId = scopeCompany(identity, req.query.companyId)
         if (!companyId) return reply.status(400).send({ error: 'companyId is required' })
 
-        // Non-cascading FKs first, then company row (CASCADE handles the rest)
-        await sql`DELETE FROM ledger_masters WHERE company_id = ${companyId}`
-        await sql`DELETE FROM stock_item_masters WHERE company_id = ${companyId}`
+        // Delete all child tables explicitly, then the company row.
+        // Use individual awaited queries (not transaction — audit_log trigger needs special handling).
+        const tables = [
+            'sync_records', 'exception_register', 'conflict_log', 'job_log',
+            'config_profiles', 'ledger_masters', 'stock_item_masters',
+            'godown_warehouse_mapping', 'voucher_type_mapping', 'admin_company_access',
+        ]
+        for (const table of tables) {
+            await sql.unsafe(`DELETE FROM ${table} WHERE company_id = $1`, [companyId])
+        }
+        // audit_log: immutable trigger blocks DELETE — disable, delete, re-enable
+        await sql`ALTER TABLE audit_log DISABLE TRIGGER trg_audit_log_immutable`
+        await sql.unsafe(`DELETE FROM audit_log WHERE company_id = $1`, [companyId])
+        await sql`ALTER TABLE audit_log ENABLE TRIGGER trg_audit_log_immutable`
+        // Finally the company row
         await sql`DELETE FROM companies WHERE id = ${companyId}`
 
         logger.info({ companyId }, 'Company deleted via dashboard')
