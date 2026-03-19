@@ -134,11 +134,12 @@ export function startSyncWorker(): Worker<SyncJobData, void, SyncJobName> {
             }
 
             if (recordType === 'ledger') {
-                await processMasterData(companyId, 'ledger', records as Record<string, unknown>[], config)
+                const groupAncestry = buildGroupAncestry((job.data.ledgerGroups ?? []) as unknown[])
+                await processMasterData(companyId, 'ledger', records as Record<string, unknown>[], config, groupAncestry)
                 return
             }
             if (recordType === 'stockItem') {
-                await processMasterData(companyId, 'stockItem', records as Record<string, unknown>[], config)
+                await processMasterData(companyId, 'stockItem', records as Record<string, unknown>[], config, new Map(), job.data.fromTimestamp)
                 return
             }
             if (recordType === 'stockGroup') {
@@ -223,6 +224,8 @@ async function processMasterData(
     type: 'ledger' | 'stockItem' | 'stockGroup' | 'uom' | 'godown',
     records: Record<string, unknown>[],
     config: CompanyConfigWithCreds,
+    groupAncestry: Map<string, string> = new Map(),
+    fromTimestamp?: string,
 ): Promise<void> {
     let upserted = 0
     const erpClient = new ERPNextClient({
@@ -242,13 +245,22 @@ async function processMasterData(
                 // Tally sends the group name as PARENT on a ledger (e.g. "Sundry Debtors").
                 // There is no separate GROUP field — parent IS the group.
                 const group = parent
-                const gstin = (raw.GSTIN ?? raw.Gstin ?? raw.gstin ?? '') as string
+                const guid = (raw.GUID ?? raw.guid ?? '') as string
+                const gstin = (raw.GSTIN ?? raw.Gstin ?? raw.gstin ?? raw.PartyGSTIN ?? raw.partyGstin ?? '') as string
                 const isParty = (raw.IsPartyLedger ?? raw.isPartyLedger ?? raw.ISPARTYLEDGER ?? false) as boolean
                 const openBal =
                     parseFloat(String(raw.OpeningBalance ?? raw.openingBalance ?? raw.OPENINGBALANCE ?? 0)) || 0
+                // Address + contact fields from Tally ledger master
+                const addressLines = ((raw.Address ?? raw.address ?? []) as string[]).filter(Boolean)
+                const pinCode = (raw.PinCode ?? raw.pinCode ?? '') as string
+                const stateName = (raw.StateName ?? raw.stateName ?? '') as string
+                const countryName = (raw.CountryName ?? raw.countryName ?? '') as string
+                const email = (raw.Email ?? raw.email ?? '') as string
+                const mobile = (raw.Mobile ?? raw.mobile ?? '') as string
+                const phone = (raw.Phone ?? raw.phone ?? '') as string
 
-                // Classify ledger type from Tally group hierarchy
-                const ledgerType = classifyLedger(group, parent)
+                // Classify ledger type from Tally group hierarchy (walks full ancestry chain)
+                const ledgerType = classifyLedger(group, groupAncestry)
 
                 await sql`
                     INSERT INTO ledger_masters (company_id, tally_name, tally_parent, tally_group, opening_balance, gstin, is_party_ledger, ledger_type, raw_data, synced_at)
@@ -264,9 +276,43 @@ async function processMasterData(
                 // Push master to ERPNext based on type
                 try {
                     if (ledgerType === 'Customer') {
-                        await erpClient.ensureCustomer(name, gstin || undefined, group || undefined)
+                        await erpClient.ensureCustomerGroup(group)
+                        await erpClient.ensureCustomer(name, gstin || undefined, group || undefined, guid || undefined)
+                        if (addressLines.length > 0 || pinCode) {
+                            await erpClient.ensurePartyAddress('Customer', name, {
+                                lines: addressLines,
+                                pinCode: pinCode || undefined,
+                                state: stateName || undefined,
+                                country: countryName || undefined,
+                                gstin: gstin || undefined,
+                            })
+                        }
+                        if (email || mobile || phone) {
+                            await erpClient.ensurePartyContact('Customer', name, {
+                                email: email || undefined,
+                                mobile: mobile || undefined,
+                                phone: phone || undefined,
+                            })
+                        }
                     } else if (ledgerType === 'Supplier') {
-                        await erpClient.ensureSupplier(name, gstin || undefined, group || undefined)
+                        await erpClient.ensureSupplierGroup(group)
+                        await erpClient.ensureSupplier(name, gstin || undefined, group || undefined, guid || undefined)
+                        if (addressLines.length > 0 || pinCode) {
+                            await erpClient.ensurePartyAddress('Supplier', name, {
+                                lines: addressLines,
+                                pinCode: pinCode || undefined,
+                                state: stateName || undefined,
+                                country: countryName || undefined,
+                                gstin: gstin || undefined,
+                            })
+                        }
+                        if (email || mobile || phone) {
+                            await erpClient.ensurePartyContact('Supplier', name, {
+                                email: email || undefined,
+                                mobile: mobile || undefined,
+                                phone: phone || undefined,
+                            })
+                        }
                     } else if (ledgerType === 'Bank' || ledgerType === 'Cash') {
                         // Auto-create GL account in ERPNext COA and persist the mapping
                         const erpAccountName = await erpClient.ensureBankGLAccount(name, config.erpnextCompany, abbr)
@@ -372,11 +418,11 @@ async function processMasterData(
             WHERE company_id = ${companyId} AND opening_qty > 0
         `
         if (openingRows.length > 0) {
-            // Derive FY start: use earliest voucher date in sync_records (if any), else April 1st
-            const [earliest] = await sql<{ d: string }[]>`
-                SELECT MIN(posting_date::date)::text AS d FROM sync_records WHERE company_id = ${companyId}
-            `.catch(() => [])
-            const fyStart = earliest?.d ?? indianFYStart()
+            // Derive FY start from the connector's sync fromTimestamp (e.g. "20240701000000").
+            // The FY starts on April 1 of the year the fromTimestamp falls in.
+            // e.g. "20240701..." → July 2024 → FY 2024-25 → opening date 2024-04-01.
+            // Falls back to the current FY start when fromTimestamp is absent.
+            const fyStart = indianFYStart(fromTimestamp)
             await erpClient.ensureOpeningStockEntry(
                 openingRows.map((r) => ({
                     itemCode: r.tally_name,
@@ -394,34 +440,76 @@ async function processMasterData(
     }
 }
 
-// Classify a Tally ledger into a broad type based on its group hierarchy
-function classifyLedger(group: string, parent: string): string {
-    const g = (group || parent || '').toLowerCase()
-    if (g.includes('sundry debtor') || g.includes('trade receivable')) return 'Customer'
-    if (g.includes('sundry creditor') || g.includes('trade payable')) return 'Supplier'
-    if (g.includes('bank') || g.includes('cash')) return 'Bank'
-    if (g.includes('duties') || g.includes('tax')) return 'Tax'
-    if (g.includes('direct expense') || g.includes('indirect expense') || g.includes('expense')) return 'Expense'
-    if (
-        g.includes('direct income') ||
-        g.includes('indirect income') ||
-        g.includes('income') ||
-        g.includes('revenue') ||
-        g.includes('sales')
-    )
-        return 'Income'
-    if (g.includes('fixed asset')) return 'Asset'
-    if (g.includes('capital') || g.includes('reserve') || g.includes('surplus')) return 'Equity'
-    if (g.includes('loan') || g.includes('advance') || g.includes('deposit')) return 'LoanAdvance'
-    if (g.includes('provision') || g.includes('liability') || g.includes('current liabilit')) return 'Liability'
+// Build a map from group name → parent group name using ledgerGroups sent by the connector.
+// Used by classifyLedger to walk the full ancestry chain (e.g. "Trade Debtors" → "Sundry Debtors").
+function buildGroupAncestry(rawGroups: unknown[]): Map<string, string> {
+    const parentMap = new Map<string, string>()
+    for (const g of rawGroups) {
+        const raw = g as Record<string, unknown>
+        const name = String(raw.Name ?? raw.name ?? '')
+        if (!name) continue
+        // Prefer PrimaryGroup (Tally's resolved top-level group) if available,
+        // otherwise use Parent (direct parent in the hierarchy).
+        const parent = String(raw.Parent ?? raw.parent ?? '')
+        const primary = String(raw.PrimaryGroup ?? raw.primaryGroup ?? '')
+        const effectiveParent = parent && parent !== name ? parent : primary !== name ? primary : ''
+        if (effectiveParent) parentMap.set(name, effectiveParent)
+    }
+    return parentMap
+}
+
+// Classify a Tally ledger into a broad type by walking the full group ancestry chain.
+// Fixes the sub-group problem: "Trade Debtors" → "Sundry Debtors" → Customer.
+function classifyLedger(group: string, groupAncestry: Map<string, string>): string {
+    const visited = new Set<string>()
+    let current = group || ''
+    while (current && !visited.has(current)) {
+        visited.add(current)
+        const g = current.toLowerCase()
+        if (g.includes('sundry debtor') || g.includes('trade receivable')) return 'Customer'
+        if (g.includes('sundry creditor') || g.includes('trade payable')) return 'Supplier'
+        if (g.includes('bank') || g.includes('cash')) return 'Bank'
+        if (g.includes('duties') || g.includes('tax')) return 'Tax'
+        if (g.includes('direct expense') || g.includes('indirect expense') || g.includes('expense')) return 'Expense'
+        if (
+            g.includes('direct income') ||
+            g.includes('indirect income') ||
+            g.includes('income') ||
+            g.includes('revenue') ||
+            g.includes('sales')
+        )
+            return 'Income'
+        if (g.includes('purchase account')) return 'Expense'
+        if (g.includes('fixed asset')) return 'Asset'
+        if (g.includes('capital') || g.includes('reserve') || g.includes('surplus')) return 'Equity'
+        if (g.includes('loan') || g.includes('advance') || g.includes('deposit')) return 'LoanAdvance'
+        if (g.includes('provision') || g.includes('liability') || g.includes('current liabilit')) return 'Liability'
+        const parent = groupAncestry.get(current)
+        if (!parent) break
+        current = parent
+    }
     return 'Other'
 }
 
-/** Returns "YYYY-04-01" for the current Indian FY start (April 1). */
-function indianFYStart(): string {
-    const now = new Date()
-    const year = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1
-    return `${year}-04-01`
+/**
+ * Returns "YYYY-04-01" for the Indian FY start (April 1) that contains the given date.
+ * fromTimestamp: yyyymmddHHmmss from the connector (e.g. "20240701000000").
+ * Falls back to current date when not provided.
+ */
+function indianFYStart(fromTimestamp?: string): string {
+    let year: number
+    let month: number
+    if (fromTimestamp && fromTimestamp.length >= 6) {
+        year = parseInt(fromTimestamp.substring(0, 4), 10)
+        month = parseInt(fromTimestamp.substring(4, 6), 10) - 1 // 0-based
+    } else {
+        const now = new Date()
+        year = now.getFullYear()
+        month = now.getMonth()
+    }
+    // Indian FY starts April 1: if month < April (month < 3), FY started the previous year
+    const fyYear = month >= 3 ? year : year - 1
+    return `${fyYear}-04-01`
 }
 
 // ── Worker: tally-write (ERPNext → Tally) — tracks state only ────────────────

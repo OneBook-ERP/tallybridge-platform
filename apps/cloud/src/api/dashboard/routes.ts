@@ -89,19 +89,29 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
         return { records: rows }
     })
 
-    // GET /dashboard/exceptions?companyId=... — open exceptions
-    app.get<{ Querystring: { companyId?: string } }>('/dashboard/exceptions', async (req) => {
+    // GET /dashboard/exceptions?companyId=...&limit=50&offset=0 — paginated exceptions
+    app.get<{ Querystring: { companyId?: string; limit?: string; offset?: string } }>('/dashboard/exceptions', async (req) => {
         const identity = (req as AuthedRequest).adminIdentity
         const companyId = scopeCompany(identity, req.query.companyId)
+        const limit = Math.min(parseInt(req.query.limit || '50', 10), 200)
+        const offset = Math.max(parseInt(req.query.offset || '0', 10), 0)
 
+        const whereClause = companyId
+            ? sql`WHERE company_id = ${companyId}`
+            : identity.companyIds.length > 0
+              ? sql`WHERE company_id = ANY(${identity.companyIds})`
+              : sql``
+
+        const [{ total }] = await sql<{ total: number }[]>`
+            SELECT COUNT(*)::int AS total FROM exception_register ${whereClause}
+        `
         const rows = await sql`
             SELECT id, tier, document_ref, error_code, error_message, created_at, resolved_at
-            FROM exception_register
-            ${companyId ? sql`WHERE company_id = ${companyId}` : identity.companyIds.length > 0 ? sql`WHERE company_id = ANY(${identity.companyIds})` : sql``}
+            FROM exception_register ${whereClause}
             ORDER BY created_at DESC
-            LIMIT 100
+            LIMIT ${limit} OFFSET ${offset}
         `
-        return { exceptions: rows }
+        return { exceptions: rows, total, limit, offset }
     })
 
     // GET /dashboard/audit-log?companyId=...&limit=50 — recent audit entries
@@ -361,17 +371,30 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
         let erpnextCompany: string | null = null
         let tallyCountsRaw: Record<string, number> | null = null
         let tallyCountsUpdatedAt: string | null = null
+        let companyErpClient = erpClient // fallback to singleton
         if (companyId) {
             const [co] = await sql<
                 {
                     erpnext_company: string
+                    erpnext_url: string | null
+                    erpnext_api_key: string | null
+                    erpnext_api_secret: string | null
                     tally_counts: Record<string, number> | null
                     last_heartbeat_at: string | null
                 }[]
-            >`SELECT erpnext_company, tally_counts, last_heartbeat_at FROM companies WHERE id = ${companyId}`
+            >`SELECT erpnext_company, erpnext_url, erpnext_api_key, erpnext_api_secret,
+                     tally_counts, last_heartbeat_at FROM companies WHERE id = ${companyId}`
             erpnextCompany = co?.erpnext_company ?? null
             tallyCountsRaw = co?.tally_counts ?? null
             tallyCountsUpdatedAt = co?.last_heartbeat_at ?? null
+            // Use per-company ERPNext credentials when available
+            if (co?.erpnext_url && co?.erpnext_api_key && co?.erpnext_api_secret) {
+                companyErpClient = new ERPNextClient({
+                    baseUrl: co.erpnext_url,
+                    apiKey: co.erpnext_api_key,
+                    apiSecret: co.erpnext_api_secret,
+                })
+            }
         }
 
         // Tally side: count vouchers synced to cloud by type (from sync_records)
@@ -418,7 +441,7 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
                     // Masters (Item, Customer, Supplier) don't have company or custom_sync_source fields
                     const isMaster = ['Item', 'Customer', 'Supplier'].includes(dt)
                     const filters = isMaster ? [] : (companyFilter ?? [])
-                    erpCounts[dt] = await erpClient.countDocs(dt, filters.length > 0 ? filters : undefined)
+                    erpCounts[dt] = await companyErpClient.countDocs(dt, filters.length > 0 ? filters : undefined)
                 } catch (err) {
                     logger.warn({ doctype: dt, err }, 'Failed to count ERPNext docs')
                     erpCounts[dt] = -1 // indicates error
@@ -426,28 +449,31 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
             }),
         )
 
-        // Helper: resolve tallyCount from tally_counts JSONB stored via heartbeat
+        // Helper: resolve tallyCount from tally_counts JSONB stored via heartbeat.
+        // Keys come from GetVoucherCounts ("Sales","Purchase","Payment","Receipt","Journal")
+        // and GetMasterCounts ("Sundry Debtors","Sundry Creditors","stockItems").
         function resolveTallyCount(doctype: string): number | null {
             if (!tallyCountsRaw) return null
             const tc = tallyCountsRaw
             switch (doctype) {
                 case 'Sales Invoice':
-                    return tc['Sales'] ?? tc['Sales Invoice'] ?? null
+                    return (tc['Sales'] ?? tc['Sales Invoice'] ?? null) as number | null
                 case 'Purchase Invoice':
-                    return tc['Purchase'] ?? tc['Purchase Invoice'] ?? null
+                    return (tc['Purchase'] ?? tc['Purchase Invoice'] ?? null) as number | null
                 case 'Payment Entry': {
-                    const pay = tc['Payment'] ?? 0
-                    const rec = tc['Receipt'] ?? 0
-                    return pay + rec > 0 ? pay + rec : (tc['Payment Entry'] ?? null)
+                    const pay = (tc['Payment'] ?? 0) as number
+                    const rec = (tc['Receipt'] ?? 0) as number
+                    return pay + rec > 0 ? pay + rec : ((tc['Payment Entry'] ?? null) as number | null)
                 }
                 case 'Journal Entry':
-                    return tc['Journal'] ?? tc['Journal Entry'] ?? null
-                case 'Stock Entry':
-                    return tc['Stock Journal'] ?? tc['Stock Entry'] ?? null
+                    return (tc['Journal'] ?? tc['Journal Entry'] ?? null) as number | null
+                case 'Item':
+                    return (tc['stockItems'] ?? tc['Stock Item'] ?? null) as number | null
                 case 'Customer':
-                    return tc['ledger_type_Sundry Debtors'] ?? tc['customers'] ?? null
+                    // GetMasterCounts uses "Sundry Debtors" as the key (the actual Tally group name)
+                    return (tc['Sundry Debtors'] ?? tc['Trade Debtors'] ?? null) as number | null
                 case 'Supplier':
-                    return tc['ledger_type_Sundry Creditors'] ?? tc['suppliers'] ?? null
+                    return (tc['Sundry Creditors'] ?? tc['Trade Creditors'] ?? null) as number | null
                 default:
                     return null
             }

@@ -37,6 +37,8 @@ const { mockSql, mockIsOwnWrite, mockCheckConflict, mockRecordConflict, mockErpC
         deleteDoc: vi.fn(),
         ensureCustomer: vi.fn(),
         ensureSupplier: vi.fn(),
+        ensureCustomerGroup: vi.fn(),
+        ensureSupplierGroup: vi.fn(),
         ensureUOM: vi.fn(),
         ensureItemGroup: vi.fn(),
         ensureItem: vi.fn(),

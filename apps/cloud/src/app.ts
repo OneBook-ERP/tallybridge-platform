@@ -29,6 +29,7 @@ import { authRoutes } from './api/auth/routes'
 
 // Dashboard API
 import { dashboardRoutes } from './api/dashboard/routes'
+import { registrationTokenRoutes } from './api/dashboard/registration-token'
 
 // Download API (public — connector binaries)
 import { downloadRoutes } from './api/download/routes'
@@ -124,6 +125,7 @@ export async function buildApp() {
 
     // ── Dashboard API (protected by JWT auth) ───────────────────────────────
     await app.register(dashboardRoutes)
+    await app.register(registrationTokenRoutes)
 
     // ── Download API (public) ─────────────────────────────────────────────
     await app.register(downloadRoutes)

@@ -25,17 +25,16 @@ export const connectorDataRoute: FastifyPluginAsync = async (fastify) => {
             const rows = await sql<
                 {
                     id: string
-                    voucher_type: string
-                    tally_voucher_number: string
+                    tier: string
+                    document_ref: string
                     error_code: string
                     error_message: string
-                    status: string
                     created_at: string
                     resolved_at: string | null
                 }[]
             >`
-                SELECT id, voucher_type, tally_voucher_number, error_code, error_message,
-                       status, created_at, resolved_at
+                SELECT id, tier, document_ref, error_code, error_message,
+                       created_at, resolved_at
                 FROM exception_register
                 WHERE company_id = ${companyId}
                 ORDER BY created_at DESC
@@ -57,22 +56,20 @@ export const connectorDataRoute: FastifyPluginAsync = async (fastify) => {
             const rows = await sql<
                 {
                     id: string
-                    voucher_type: string
-                    tally_voucher_number: string
+                    tally_voucher_number: string | null
                     tally_guid: string
-                    erp_doctype: string
-                    erp_docname: string
-                    status: string
+                    erpnext_doctype: string | null
+                    erpnext_name: string | null
+                    sync_status: string
                     direction: string
-                    synced_at: string
-                    error_message: string | null
+                    last_synced_at: string | null
                 }[]
             >`
-                SELECT id, voucher_type, tally_voucher_number, tally_guid,
-                       erp_doctype, erp_docname, status, direction, synced_at, error_message
+                SELECT id, tally_voucher_number, tally_guid,
+                       erpnext_doctype, erpnext_name, sync_status, direction, last_synced_at
                 FROM sync_records
                 WHERE company_id = ${companyId}
-                ORDER BY synced_at DESC
+                ORDER BY last_synced_at DESC NULLS LAST
                 LIMIT ${limit}
             `
 

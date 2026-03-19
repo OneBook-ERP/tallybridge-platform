@@ -4,7 +4,10 @@
  * First-time connector registration. Creates a company row if it doesn't exist
  * and issues a machine token. Also seeds a default config_profile row.
  *
- * Body: { machineId, tallyVersion, osInfo, companyName }
+ * If a valid registrationToken is provided, the company is automatically linked
+ * to the admin who generated the token (via admin_company_access).
+ *
+ * Body: { machineId, tallyVersion, osInfo, companyName, registrationToken? }
  * Response: { machineToken, companyId, cloudConfig }
  */
 import type { FastifyPluginAsync } from 'fastify'
@@ -18,6 +21,7 @@ const RegisterBodySchema = z.object({
     tallyVersion: z.string().optional(),
     osInfo: z.string().optional(),
     companyName: z.string().min(1),
+    registrationToken: z.string().optional(), // one-time token from dashboard
 })
 
 export const registerRoute: FastifyPluginAsync = async (fastify) => {
@@ -60,6 +64,32 @@ export const registerRoute: FastifyPluginAsync = async (fastify) => {
           VALUES (${companyId})
           ON CONFLICT (company_id) DO NOTHING
         `
+
+            // If a registration token was supplied, link company to admin
+            if (body.registrationToken) {
+                const [tokenRow] = await sql<{ id: string; admin_id: string }[]>`
+                    SELECT id, admin_id FROM registration_tokens
+                    WHERE token       = ${body.registrationToken}
+                      AND consumed_at IS NULL
+                      AND expires_at  > now()
+                    LIMIT 1
+                `
+                if (tokenRow) {
+                    await sql`
+                        INSERT INTO admin_company_access (admin_id, company_id)
+                        VALUES (${tokenRow.admin_id}, ${companyId})
+                        ON CONFLICT (admin_id, company_id) DO NOTHING
+                    `
+                    await sql`
+                        UPDATE registration_tokens
+                        SET consumed_at = now(), company_id = ${companyId}
+                        WHERE id = ${tokenRow.id}
+                    `
+                    logger.info({ companyId, adminId: tokenRow.admin_id }, 'Company linked to admin via registration token')
+                } else {
+                    logger.warn({ token: body.registrationToken }, 'Registration token invalid or expired — company not linked to admin')
+                }
+            }
 
             const machineToken = await issueMachineToken(companyId)
 

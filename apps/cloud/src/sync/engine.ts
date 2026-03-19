@@ -290,12 +290,18 @@ export async function processTallyVoucher(voucher: TallyVoucher, config: ConfigW
             }
         }
 
-        // Helper: create address + contact for a party if master data exists
-        const ensurePartyAddressContact = async (partyType: 'Customer' | 'Supplier', partyName: string) => {
+        // Helper: create address + contact for a party if master data exists.
+        // Returns the ERPNext Address name (e.g. "Abuseef International-Billing") so the
+        // caller can set customer_address / supplier_address on the invoice doc.
+        const ensurePartyAddressContact = async (
+            partyType: 'Customer' | 'Supplier',
+            partyName: string,
+        ): Promise<string | null> => {
             const master = await getPartyMasterData(partyName)
-            if (!master) return
+            if (!master) return null
+            let addressName: string | null = null
             if (master.address.length > 0 || master.pinCode) {
-                await erpClient.ensurePartyAddress(partyType, partyName, {
+                addressName = await erpClient.ensurePartyAddress(partyType, partyName, {
                     lines: master.address,
                     pinCode: master.pinCode,
                     state: master.state,
@@ -310,6 +316,7 @@ export async function processTallyVoucher(voucher: TallyVoucher, config: ConfigW
                     phone: master.phone,
                 })
             }
+            return addressName
         }
 
         // Helper: look up item group from stock_item_masters
@@ -324,20 +331,31 @@ export async function processTallyVoucher(voucher: TallyVoucher, config: ConfigW
 
         // Ensure party exists (pass GSTIN + group for India Compliance) + address/contact.
         // Skip bank/cash/capital ledgers — they are GL accounts, not business parties.
+        // Create Customer/Supplier Group first so the group Link field is valid.
         if (doctype === 'Sales Invoice' && doc.customer) {
             const partyName = doc.customer as string
             if (!(await isAccountingLedger(partyName))) {
                 const group = await getPartyGroup(partyName)
+                if (group) await erpClient.ensureCustomerGroup(group)
                 await erpClient.ensureCustomer(partyName, (doc.customer_gstin as string) || undefined, group)
-                await ensurePartyAddressContact('Customer', partyName)
+                const addressName = await ensurePartyAddressContact('Customer', partyName)
+                // Inject the ERPNext Address name (link field) — overrides raw-text value from transform
+                if (addressName) {
+                    doc.customer_address = addressName
+                    doc.shipping_address_name = addressName
+                }
             }
         }
         if (doctype === 'Purchase Invoice' && doc.supplier) {
             const partyName = doc.supplier as string
             if (!(await isAccountingLedger(partyName))) {
                 const group = await getPartyGroup(partyName)
+                if (group) await erpClient.ensureSupplierGroup(group)
                 await erpClient.ensureSupplier(partyName, (doc.supplier_gstin as string) || undefined, group)
-                await ensurePartyAddressContact('Supplier', partyName)
+                const addressName = await ensurePartyAddressContact('Supplier', partyName)
+                if (addressName) {
+                    doc.supplier_address = addressName
+                }
             }
         }
         if (doctype === 'Payment Entry' && doc.party) {
@@ -345,9 +363,11 @@ export async function processTallyVoucher(voucher: TallyVoucher, config: ConfigW
             if (!(await isAccountingLedger(partyName))) {
                 const group = await getPartyGroup(partyName)
                 if (doc.party_type === 'Customer') {
+                    if (group) await erpClient.ensureCustomerGroup(group)
                     await erpClient.ensureCustomer(partyName, undefined, group)
                     await ensurePartyAddressContact('Customer', partyName)
                 } else if (doc.party_type === 'Supplier') {
+                    if (group) await erpClient.ensureSupplierGroup(group)
                     await erpClient.ensureSupplier(partyName, undefined, group)
                     await ensurePartyAddressContact('Supplier', partyName)
                 }
@@ -360,9 +380,11 @@ export async function processTallyVoucher(voucher: TallyVoucher, config: ConfigW
                 if (await isAccountingLedger(acct.party)) continue
                 const group = await getPartyGroup(acct.party)
                 if (acct.party_type === 'Customer') {
+                    if (group) await erpClient.ensureCustomerGroup(group)
                     await erpClient.ensureCustomer(acct.party, undefined, group)
                     await ensurePartyAddressContact('Customer', acct.party)
                 } else if (acct.party_type === 'Supplier') {
+                    if (group) await erpClient.ensureSupplierGroup(group)
                     await erpClient.ensureSupplier(acct.party, undefined, group)
                     await ensurePartyAddressContact('Supplier', acct.party)
                 }

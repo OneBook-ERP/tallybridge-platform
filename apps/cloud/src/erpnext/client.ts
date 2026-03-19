@@ -157,10 +157,10 @@ export class ERPNextClient {
     }
 
     /** Ensure a Customer exists in ERPNext with correct GSTIN; create or update if needed. */
-    async ensureCustomer(name: string, gstin?: string, customerGroup?: string): Promise<void> {
-        let existing: { gstin?: string; gst_category?: string; customer_group?: string } | null = null
+    async ensureCustomer(name: string, gstin?: string, customerGroup?: string, tallyGuid?: string): Promise<void> {
+        let existing: { gstin?: string; gst_category?: string; customer_group?: string; custom_tally_guid?: string } | null = null
         try {
-            existing = await this.getDoc<{ gstin?: string; gst_category?: string; customer_group?: string }>(
+            existing = await this.getDoc<{ gstin?: string; gst_category?: string; customer_group?: string; custom_tally_guid?: string }>(
                 'Customer',
                 name,
             )
@@ -174,6 +174,7 @@ export class ERPNextClient {
                     territory: 'All Territories',
                     gstin: gstin || undefined,
                     gst_category: gstin ? 'Registered Regular' : 'Unregistered',
+                    custom_tally_guid: tallyGuid || undefined,
                 })
                 logger.info({ name }, 'Auto-created Customer in ERPNext')
                 return
@@ -192,6 +193,9 @@ export class ERPNextClient {
         ) {
             updates.customer_group = customerGroup
         }
+        if (tallyGuid && !existing.custom_tally_guid) {
+            updates.custom_tally_guid = tallyGuid
+        }
         if (Object.keys(updates).length > 0) {
             try {
                 await this.updateDoc('Customer', name, updates)
@@ -203,10 +207,10 @@ export class ERPNextClient {
     }
 
     /** Ensure a Supplier exists in ERPNext with correct GSTIN; create or update if needed. */
-    async ensureSupplier(name: string, gstin?: string, supplierGroup?: string): Promise<void> {
-        let existing: { gstin?: string; gst_category?: string; supplier_group?: string } | null = null
+    async ensureSupplier(name: string, gstin?: string, supplierGroup?: string, tallyGuid?: string): Promise<void> {
+        let existing: { gstin?: string; gst_category?: string; supplier_group?: string; custom_tally_guid?: string } | null = null
         try {
-            existing = await this.getDoc<{ gstin?: string; gst_category?: string; supplier_group?: string }>(
+            existing = await this.getDoc<{ gstin?: string; gst_category?: string; supplier_group?: string; custom_tally_guid?: string }>(
                 'Supplier',
                 name,
             )
@@ -219,6 +223,7 @@ export class ERPNextClient {
                     supplier_group: supplierGroup || 'All Supplier Groups',
                     gstin: gstin || undefined,
                     gst_category: gstin ? 'Registered Regular' : 'Unregistered',
+                    custom_tally_guid: tallyGuid || undefined,
                 })
                 logger.info({ name }, 'Auto-created Supplier in ERPNext')
                 return
@@ -236,6 +241,9 @@ export class ERPNextClient {
             supplierGroup !== 'All Supplier Groups'
         ) {
             updates.supplier_group = supplierGroup
+        }
+        if (tallyGuid && !existing.custom_tally_guid) {
+            updates.custom_tally_guid = tallyGuid
         }
         if (Object.keys(updates).length > 0) {
             try {
@@ -259,6 +267,52 @@ export class ERPNextClient {
                     logger.info({ uom }, 'Auto-created UOM in ERPNext')
                 } catch (createErr) {
                     logger.warn({ uom, err: createErr }, 'Could not create UOM — will fall back to Nos')
+                }
+            }
+        }
+    }
+
+    /** Ensure a Customer Group exists in ERPNext under 'All Customer Groups'; create if missing. */
+    async ensureCustomerGroup(groupName: string): Promise<void> {
+        if (!groupName || groupName === 'All Customer Groups') return
+        try {
+            await this.getDoc('Customer Group', groupName)
+        } catch (err) {
+            if (err instanceof ERPNextError && err.status === 404) {
+                try {
+                    await this.createDoc('Customer Group', {
+                        customer_group_name: groupName,
+                        parent_customer_group: 'All Customer Groups',
+                    })
+                    logger.info({ groupName }, 'Auto-created Customer Group in ERPNext')
+                } catch (createErr) {
+                    logger.warn(
+                        { groupName, err: createErr },
+                        'Could not create Customer Group — will fall back to All Customer Groups',
+                    )
+                }
+            }
+        }
+    }
+
+    /** Ensure a Supplier Group exists in ERPNext under 'All Supplier Groups'; create if missing. */
+    async ensureSupplierGroup(groupName: string): Promise<void> {
+        if (!groupName || groupName === 'All Supplier Groups') return
+        try {
+            await this.getDoc('Supplier Group', groupName)
+        } catch (err) {
+            if (err instanceof ERPNextError && err.status === 404) {
+                try {
+                    await this.createDoc('Supplier Group', {
+                        supplier_group_name: groupName,
+                        parent_supplier_group: 'All Supplier Groups',
+                    })
+                    logger.info({ groupName }, 'Auto-created Supplier Group in ERPNext')
+                } catch (createErr) {
+                    logger.warn(
+                        { groupName, err: createErr },
+                        'Could not create Supplier Group — will fall back to All Supplier Groups',
+                    )
                 }
             }
         }

@@ -44,6 +44,7 @@ export type SyncJobData = {
     records: unknown[]
     fromTimestamp: string
     toTimestamp: string
+    ledgerGroups?: unknown[]
 }
 
 export const syncJobsQueue = new Queue<SyncJobData, void, SyncJobName>('sync-jobs', {

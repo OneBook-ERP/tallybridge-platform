@@ -20,6 +20,10 @@ const SyncDataBodySchema = z.object({
     vouchers: z.array(z.record(z.unknown())).optional(),
     ledgers: z.array(z.record(z.unknown())).optional(),
     stockItems: z.array(z.record(z.unknown())).optional(),
+    stockGroups: z.array(z.record(z.unknown())).optional(),
+    uom: z.array(z.record(z.unknown())).optional(),
+    godowns: z.array(z.record(z.unknown())).optional(),
+    ledgerGroups: z.array(z.record(z.unknown())).optional(),
 })
 
 type AuthedRequest = FastifyRequest & { connectorIdentity?: ConnectorIdentity }
@@ -36,16 +40,33 @@ export const syncDataRoute: FastifyPluginAsync = async (fastify) => {
             }
 
             const batchId = randomUUID()
-            const records: unknown[] = [...(body.vouchers ?? []), ...(body.ledgers ?? []), ...(body.stockItems ?? [])]
+
+            // Each batch from the connector contains exactly one master type or vouchers.
+            // Priority: ledger > stockItem > stockGroup > uom > godown > voucher
+            let recordType: 'voucher' | 'ledger' | 'stockItem' | 'stockGroup' | 'uom' | 'godown' = 'voucher'
+            let records: unknown[]
+            if (body.ledgers?.length) {
+                recordType = 'ledger'
+                records = body.ledgers
+            } else if (body.stockItems?.length) {
+                recordType = 'stockItem'
+                records = body.stockItems
+            } else if (body.stockGroups?.length) {
+                recordType = 'stockGroup'
+                records = body.stockGroups
+            } else if (body.uom?.length) {
+                recordType = 'uom'
+                records = body.uom
+            } else if (body.godowns?.length) {
+                recordType = 'godown'
+                records = body.godowns
+            } else {
+                records = body.vouchers ?? []
+            }
 
             if (records.length === 0) {
                 return reply.send({ ok: true, batchId, queued: 0 })
             }
-
-            // Determine record type by content of first record
-            let recordType: 'voucher' | 'ledger' | 'stockItem' = 'voucher'
-            if (body.ledgers && body.ledgers.length > 0) recordType = 'ledger'
-            if (body.stockItems && body.stockItems.length > 0) recordType = 'stockItem'
 
             await enqueueSyncBatch({
                 companyId: body.companyId,
@@ -54,6 +75,7 @@ export const syncDataRoute: FastifyPluginAsync = async (fastify) => {
                 records,
                 fromTimestamp: body.fromTimestamp,
                 toTimestamp: body.toTimestamp,
+                ledgerGroups: recordType === 'ledger' ? (body.ledgerGroups ?? []) : undefined,
             })
 
             logger.info({ companyId: body.companyId, batchId, count: records.length }, 'Sync data enqueued')

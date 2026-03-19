@@ -157,9 +157,10 @@ describe('GET /dashboard/sync-records', () => {
 
 describe('GET /dashboard/exceptions', () => {
     it('returns exceptions array', async () => {
-        // Conditional sql fragment → 2 calls: fragment first, then main query
+        // 3 calls: WHERE fragment, COUNT query, main SELECT
         mockSql
-            .mockResolvedValueOnce([]) // fragment
+            .mockResolvedValueOnce([]) // WHERE fragment
+            .mockResolvedValueOnce([{ total: 1 }]) // COUNT
             .mockResolvedValueOnce([
                 { id: 'e1', tier: 'TIER2_FLAG', error_code: 'UNMAPPED_LEDGER', error_message: 'Unknown ledger' },
             ])

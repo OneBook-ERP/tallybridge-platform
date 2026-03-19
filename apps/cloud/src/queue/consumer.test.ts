@@ -22,6 +22,10 @@ const { mockSql, mockProcessTallyVoucher, mockBroadcaster } = vi.hoisted(() => {
 // ERPNext client method mocks — accessible from tests for assertions
 const mockEnsureCustomer = vi.fn(() => Promise.resolve())
 const mockEnsureSupplier = vi.fn(() => Promise.resolve())
+const mockEnsureCustomerGroup = vi.fn(() => Promise.resolve())
+const mockEnsureSupplierGroup = vi.fn(() => Promise.resolve())
+const mockEnsurePartyAddress = vi.fn(() => Promise.resolve(null))
+const mockEnsurePartyContact = vi.fn(() => Promise.resolve(null))
 const mockEnsureBankGLAccount = vi.fn(() => Promise.resolve('Bank - TC'))
 const mockEnsureItem = vi.fn(() => Promise.resolve())
 const mockEnsureUOM = vi.fn(() => Promise.resolve())
@@ -61,6 +65,10 @@ vi.mock('../erpnext/client', () => ({
         constructor() {}
         ensureCustomer = (...a: unknown[]) => mockEnsureCustomer(...a)
         ensureSupplier = (...a: unknown[]) => mockEnsureSupplier(...a)
+        ensureCustomerGroup = (...a: unknown[]) => mockEnsureCustomerGroup(...a)
+        ensureSupplierGroup = (...a: unknown[]) => mockEnsureSupplierGroup(...a)
+        ensurePartyAddress = (...a: unknown[]) => mockEnsurePartyAddress(...a)
+        ensurePartyContact = (...a: unknown[]) => mockEnsurePartyContact(...a)
         ensureBankGLAccount = (...a: unknown[]) => mockEnsureBankGLAccount(...a)
         ensureItem = (...a: unknown[]) => mockEnsureItem(...a)
         ensureUOM = (...a: unknown[]) => mockEnsureUOM(...a)
@@ -265,7 +273,8 @@ describe('sync-jobs processor', () => {
                 ],
             },
         })
-        expect(mockEnsureCustomer).toHaveBeenCalledWith('ANU POLYMERS', '33AAUFA2081K1Z9', 'Sundry Debtors')
+        expect(mockEnsureCustomerGroup).toHaveBeenCalledWith('Sundry Debtors')
+        expect(mockEnsureCustomer).toHaveBeenCalledWith('ANU POLYMERS', '33AAUFA2081K1Z9', 'Sundry Debtors', undefined)
     })
 
     it('classifyLedger: Sundry Creditors → Supplier', async () => {
@@ -284,10 +293,12 @@ describe('sync-jobs processor', () => {
                 ],
             },
         })
+        expect(mockEnsureSupplierGroup).toHaveBeenCalledWith('Sundry Creditors')
         expect(mockEnsureSupplier).toHaveBeenCalledWith(
             'SERVO PACKAGING LIMITED',
             '27AAHCS6789E1ZA',
             'Sundry Creditors',
+            undefined,
         )
     })
 
