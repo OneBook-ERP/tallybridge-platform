@@ -4,7 +4,7 @@
  */
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify'
 import { sql } from '../../db/db'
-import { erpClient } from '../../erpnext/client'
+import { erpClient, ERPNextClient } from '../../erpnext/client'
 import { generateOpeningBalance } from '../../sync/opening-balance'
 import { logger } from '../../lib/logger'
 import { requireAdmin, scopeCompany, type AdminIdentity } from '../../auth/require-admin'
