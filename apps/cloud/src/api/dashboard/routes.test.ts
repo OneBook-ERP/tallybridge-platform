@@ -131,9 +131,10 @@ describe('GET /dashboard/stats', () => {
 
 describe('GET /dashboard/sync-records', () => {
     it('returns records array', async () => {
-        // Conditional sql fragment → 2 calls: fragment first, then main query
+        // 3 calls: WHERE fragment, COUNT query, main SELECT
         mockSql
-            .mockResolvedValueOnce([]) // fragment (sql`` empty)
+            .mockResolvedValueOnce([]) // WHERE fragment
+            .mockResolvedValueOnce([{ total: 1 }]) // COUNT
             .mockResolvedValueOnce([
                 { tally_guid: 'g1', erpnext_doctype: 'Sales Invoice', erpnext_name: 'SINV-001', sync_status: 'SYNCED' },
             ])
@@ -144,9 +145,14 @@ describe('GET /dashboard/sync-records', () => {
         const body = JSON.parse(res.body)
         expect(body.records).toHaveLength(1)
         expect(body.records[0].erpnext_doctype).toBe('Sales Invoice')
+        expect(body.total).toBe(1)
     })
 
     it('respects limit param (max 200)', async () => {
+        mockSql
+            .mockResolvedValueOnce([]) // WHERE fragment
+            .mockResolvedValueOnce([{ total: 0 }]) // COUNT
+            .mockResolvedValueOnce([]) // SELECT
         const res = await app.inject({ method: 'GET', url: '/dashboard/sync-records?limit=300' })
         // Should not error — limit clamped to 200 internally
         expect(res.statusCode).toBe(200)

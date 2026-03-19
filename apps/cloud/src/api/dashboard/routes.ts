@@ -74,20 +74,34 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
     })
 
     // GET /dashboard/sync-records?companyId=...&limit=50 — recent sync activity
-    app.get<{ Querystring: { companyId?: string; limit?: string } }>('/dashboard/sync-records', async (req) => {
-        const identity = (req as AuthedRequest).adminIdentity
-        const companyId = scopeCompany(identity, req.query.companyId)
-        const limit = Math.min(parseInt(req.query.limit || '50', 10), 200)
+    app.get<{ Querystring: { companyId?: string; limit?: string; offset?: string } }>(
+        '/dashboard/sync-records',
+        async (req) => {
+            const identity = (req as AuthedRequest).adminIdentity
+            const companyId = scopeCompany(identity, req.query.companyId)
+            const limit = Math.min(parseInt(req.query.limit || '50', 10), 200)
+            const offset = Math.max(parseInt(req.query.offset || '0', 10), 0)
 
-        const rows = await sql`
+            const whereClause = companyId
+                ? sql`WHERE company_id = ${companyId}`
+                : identity.companyIds.length > 0
+                  ? sql`WHERE company_id = ANY(${identity.companyIds})`
+                  : sql``
+
+            const [{ total }] = await sql<
+                { total: number }[]
+            >`SELECT COUNT(*)::int AS total FROM sync_records ${whereClause}`
+
+            const rows = await sql`
             SELECT tally_guid, erpnext_doctype, erpnext_name, sync_status, last_synced_at
             FROM sync_records
-            ${companyId ? sql`WHERE company_id = ${companyId}` : identity.companyIds.length > 0 ? sql`WHERE company_id = ANY(${identity.companyIds})` : sql``}
+            ${whereClause}
             ORDER BY last_synced_at DESC
-            LIMIT ${limit}
+            LIMIT ${limit} OFFSET ${offset}
         `
-        return { records: rows }
-    })
+            return { records: rows, total }
+        },
+    )
 
     // GET /dashboard/exceptions?companyId=...&limit=50&offset=0 — paginated exceptions
     app.get<{ Querystring: { companyId?: string; limit?: string; offset?: string } }>(
@@ -363,6 +377,21 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
         }
         // audit_log is immutable so we skip it
         logger.info({ companyId, clearMasters }, 'Sync history reset via dashboard')
+        return { ok: true }
+    })
+
+    // DELETE /dashboard/company?companyId=... — permanently delete a company and all its data
+    app.delete<{ Querystring: { companyId: string } }>('/dashboard/company', async (req, reply) => {
+        const identity = (req as AuthedRequest).adminIdentity
+        const companyId = scopeCompany(identity, req.query.companyId)
+        if (!companyId) return reply.status(400).send({ error: 'companyId is required' })
+
+        // Non-cascading FKs first, then company row (CASCADE handles the rest)
+        await sql`DELETE FROM ledger_masters WHERE company_id = ${companyId}`
+        await sql`DELETE FROM stock_item_masters WHERE company_id = ${companyId}`
+        await sql`DELETE FROM companies WHERE id = ${companyId}`
+
+        logger.info({ companyId }, 'Company deleted via dashboard')
         return { ok: true }
     })
 

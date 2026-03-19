@@ -71,21 +71,34 @@ interface ConfigProfile {
 
 // Root-type classification for Tally groups — mirrors default-mappings.ts on the backend.
 const TALLY_GROUP_ROOT_TYPE: Record<string, 'Asset' | 'Liability' | 'Income' | 'Expense'> = {
-    'Sundry Debtors': 'Asset', 'Bank Accounts': 'Asset', 'Cash-in-Hand': 'Asset',
-    'Loans & Advances (Asset)': 'Asset', 'Fixed Assets': 'Asset', 'Current Assets': 'Asset',
-    'Stock-in-Hand': 'Asset', 'Investments': 'Asset',
-    'Sundry Creditors': 'Liability', 'Duties & Taxes': 'Liability', 'Current Liabilities': 'Liability',
-    'Loans & Advances (Liability)': 'Liability', 'Provisions': 'Liability', 'Bank OD Accounts': 'Liability',
-    'Sales Accounts': 'Income', 'Direct Income': 'Income', 'Indirect Income': 'Income',
-    'Purchase Accounts': 'Expense', 'Direct Expenses': 'Expense', 'Indirect Expenses': 'Expense',
+    'Sundry Debtors': 'Asset',
+    'Bank Accounts': 'Asset',
+    'Cash-in-Hand': 'Asset',
+    'Loans & Advances (Asset)': 'Asset',
+    'Fixed Assets': 'Asset',
+    'Current Assets': 'Asset',
+    'Stock-in-Hand': 'Asset',
+    Investments: 'Asset',
+    'Sundry Creditors': 'Liability',
+    'Duties & Taxes': 'Liability',
+    'Current Liabilities': 'Liability',
+    'Loans & Advances (Liability)': 'Liability',
+    Provisions: 'Liability',
+    'Bank OD Accounts': 'Liability',
+    'Sales Accounts': 'Income',
+    'Direct Income': 'Income',
+    'Indirect Income': 'Income',
+    'Purchase Accounts': 'Expense',
+    'Direct Expenses': 'Expense',
+    'Indirect Expenses': 'Expense',
 }
 
 // Section metadata for the 4 grouping tabs
 const ACCOUNT_SECTIONS = [
-    { key: 'Asset',     label: 'Assets',      color: 'bg-blue-50 text-blue-700 border-blue-200' },
-    { key: 'Liability', label: 'Liabilities',  color: 'bg-purple-50 text-purple-700 border-purple-200' },
-    { key: 'Income',    label: 'Income',       color: 'bg-green-50 text-green-700 border-green-200' },
-    { key: 'Expense',   label: 'Expenses',     color: 'bg-orange-50 text-orange-700 border-orange-200' },
+    { key: 'Asset', label: 'Assets', color: 'bg-blue-50 text-blue-700 border-blue-200' },
+    { key: 'Liability', label: 'Liabilities', color: 'bg-purple-50 text-purple-700 border-purple-200' },
+    { key: 'Income', label: 'Income', color: 'bg-green-50 text-green-700 border-green-200' },
+    { key: 'Expense', label: 'Expenses', color: 'bg-orange-50 text-orange-700 border-orange-200' },
 ] as const
 
 interface GodownRow {
@@ -316,9 +329,13 @@ function ConfigurationTab({ companyId }: { companyId: string }) {
                                 <div>
                                     <h3 className="font-semibold text-lg">Account Mappings</h3>
                                     <p className="text-sm text-gray-500 mt-0.5">
-                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 mr-1">Auto</span>
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 mr-1">
+                                            Auto
+                                        </span>
                                         group defaults resolve automatically.
-                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200 mx-1">Manual</span>
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200 mx-1">
+                                            Manual
+                                        </span>
                                         entries override or extend defaults.
                                     </p>
                                 </div>
@@ -332,7 +349,7 @@ function ConfigurationTab({ companyId }: { companyId: string }) {
 
                             {/* Root-type filter tabs */}
                             <div className="flex gap-2 mt-4 flex-wrap">
-                                {(['All', ...ACCOUNT_SECTIONS.map(s => s.key)] as const).map((rt) => (
+                                {(['All', ...ACCOUNT_SECTIONS.map((s) => s.key)] as const).map((rt) => (
                                     <button
                                         key={rt}
                                         onClick={() => setActiveRootType(rt as typeof activeRootType)}
@@ -342,10 +359,16 @@ function ConfigurationTab({ companyId }: { companyId: string }) {
                                                 : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400'
                                         }`}
                                     >
-                                        {rt === 'All' ? 'All' : ACCOUNT_SECTIONS.find(s => s.key === rt)?.label}
+                                        {rt === 'All' ? 'All' : ACCOUNT_SECTIONS.find((s) => s.key === rt)?.label}
                                         {rt !== 'All' && (
                                             <span className="ml-1 text-xs opacity-70">
-                                                ({accountRows.filter(r => (TALLY_GROUP_ROOT_TYPE[r.tally] ?? 'Expense') === rt).length})
+                                                (
+                                                {
+                                                    accountRows.filter(
+                                                        (r) => (TALLY_GROUP_ROOT_TYPE[r.tally] ?? 'Expense') === rt,
+                                                    ).length
+                                                }
+                                                )
                                             </span>
                                         )}
                                     </button>
@@ -357,9 +380,13 @@ function ConfigurationTab({ companyId }: { companyId: string }) {
                         {Object.keys(groupDefaultMappings).length > 0 && (
                             <details className="bg-emerald-50 rounded-xl border border-emerald-200 p-4 open:space-y-3">
                                 <summary className="cursor-pointer font-medium text-sm text-emerald-800 select-none flex items-center gap-2">
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 border border-emerald-300">Auto</span>
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 border border-emerald-300">
+                                        Auto
+                                    </span>
                                     Group Defaults — {Object.keys(groupDefaultMappings).length} auto-matched accounts
-                                    <span className="text-xs text-emerald-600 ml-auto font-normal">no configuration needed ▾</span>
+                                    <span className="text-xs text-emerald-600 ml-auto font-normal">
+                                        no configuration needed ▾
+                                    </span>
                                 </summary>
                                 <table className="min-w-full text-sm mt-2">
                                     <thead>
@@ -370,13 +397,19 @@ function ConfigurationTab({ companyId }: { companyId: string }) {
                                     </thead>
                                     <tbody className="divide-y divide-emerald-100">
                                         {Object.entries(groupDefaultMappings)
-                                            .filter(([group]) => activeRootType === 'All' || TALLY_GROUP_ROOT_TYPE[group] === activeRootType)
+                                            .filter(
+                                                ([group]) =>
+                                                    activeRootType === 'All' ||
+                                                    TALLY_GROUP_ROOT_TYPE[group] === activeRootType,
+                                            )
                                             .map(([group, account]) => (
-                                            <tr key={group}>
-                                                <td className="py-1.5 pr-4 text-emerald-900 font-medium">{group}</td>
-                                                <td className="py-1.5 text-emerald-800">{account}</td>
-                                            </tr>
-                                        ))}
+                                                <tr key={group}>
+                                                    <td className="py-1.5 pr-4 text-emerald-900 font-medium">
+                                                        {group}
+                                                    </td>
+                                                    <td className="py-1.5 text-emerald-800">{account}</td>
+                                                </tr>
+                                            ))}
                                     </tbody>
                                 </table>
                             </details>
@@ -385,25 +418,39 @@ function ConfigurationTab({ companyId }: { companyId: string }) {
                         {/* Manual mappings — editable table */}
                         <div className="bg-white rounded-xl shadow-sm border p-5 space-y-3">
                             <h4 className="font-medium text-sm text-gray-700 flex items-center gap-2">
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200">Manual</span>
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                                    Manual
+                                </span>
                                 Specific Ledger Mappings
-                                <span className="text-xs text-gray-400 font-normal">— override or extend group defaults</span>
+                                <span className="text-xs text-gray-400 font-normal">
+                                    — override or extend group defaults
+                                </span>
                             </h4>
 
-                            {accountRows.filter(r => activeRootType === 'All' || (TALLY_GROUP_ROOT_TYPE[r.tally] ?? 'Expense') === activeRootType).length === 0 ? (
+                            {accountRows.filter(
+                                (r) =>
+                                    activeRootType === 'All' ||
+                                    (TALLY_GROUP_ROOT_TYPE[r.tally] ?? 'Expense') === activeRootType,
+                            ).length === 0 ? (
                                 <div className="py-6 text-center text-gray-400 text-sm border rounded-lg">
                                     {activeRootType === 'All'
                                         ? 'No manual mappings yet. Click "+ Add Mapping" to add one.'
-                                        : `No ${ACCOUNT_SECTIONS.find(s => s.key === activeRootType)?.label.toLowerCase()} mappings yet.`}
+                                        : `No ${ACCOUNT_SECTIONS.find((s) => s.key === activeRootType)?.label.toLowerCase()} mappings yet.`}
                                 </div>
                             ) : (
                                 <div className="overflow-x-auto">
                                     <table className="min-w-full divide-y divide-gray-200">
                                         <thead className="bg-gray-50">
                                             <tr>
-                                                <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase w-10">Type</th>
-                                                <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Tally Ledger</th>
-                                                <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">ERPNext Account</th>
+                                                <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase w-10">
+                                                    Type
+                                                </th>
+                                                <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">
+                                                    Tally Ledger
+                                                </th>
+                                                <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">
+                                                    ERPNext Account
+                                                </th>
                                                 <th className="px-4 py-2 w-16"></th>
                                             </tr>
                                         </thead>
@@ -411,12 +458,14 @@ function ConfigurationTab({ companyId }: { companyId: string }) {
                                             {accountRows.map((row, i) => {
                                                 const rootType = TALLY_GROUP_ROOT_TYPE[row.tally] ?? 'Expense'
                                                 if (activeRootType !== 'All' && rootType !== activeRootType) return null
-                                                const sec = ACCOUNT_SECTIONS.find(s => s.key === rootType)
+                                                const sec = ACCOUNT_SECTIONS.find((s) => s.key === rootType)
                                                 return (
                                                     <tr key={i}>
                                                         <td className="px-4 py-2">
                                                             {sec && (
-                                                                <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-medium border ${sec.color}`}>
+                                                                <span
+                                                                    className={`inline-block px-1.5 py-0.5 rounded text-xs font-medium border ${sec.color}`}
+                                                                >
                                                                     {sec.label.slice(0, 3)}
                                                                 </span>
                                                             )}
@@ -425,11 +474,13 @@ function ConfigurationTab({ companyId }: { companyId: string }) {
                                                             <input
                                                                 type="text"
                                                                 value={row.tally}
-                                                                onChange={(e) => setAccountRows((prev) => {
-                                                                    const next = [...prev]
-                                                                    next[i] = { ...next[i], tally: e.target.value }
-                                                                    return next
-                                                                })}
+                                                                onChange={(e) =>
+                                                                    setAccountRows((prev) => {
+                                                                        const next = [...prev]
+                                                                        next[i] = { ...next[i], tally: e.target.value }
+                                                                        return next
+                                                                    })
+                                                                }
                                                                 placeholder="Tally ledger name"
                                                                 className="w-full px-2 py-1.5 border rounded text-sm"
                                                             />
@@ -438,18 +489,24 @@ function ConfigurationTab({ companyId }: { companyId: string }) {
                                                             <input
                                                                 type="text"
                                                                 value={row.erp}
-                                                                onChange={(e) => setAccountRows((prev) => {
-                                                                    const next = [...prev]
-                                                                    next[i] = { ...next[i], erp: e.target.value }
-                                                                    return next
-                                                                })}
+                                                                onChange={(e) =>
+                                                                    setAccountRows((prev) => {
+                                                                        const next = [...prev]
+                                                                        next[i] = { ...next[i], erp: e.target.value }
+                                                                        return next
+                                                                    })
+                                                                }
                                                                 placeholder="ERPNext account name"
                                                                 className="w-full px-2 py-1.5 border rounded text-sm"
                                                             />
                                                         </td>
                                                         <td className="px-4 py-2">
                                                             <button
-                                                                onClick={() => setAccountRows((prev) => prev.filter((_, j) => j !== i))}
+                                                                onClick={() =>
+                                                                    setAccountRows((prev) =>
+                                                                        prev.filter((_, j) => j !== i),
+                                                                    )
+                                                                }
                                                                 className="text-red-400 hover:text-red-600 text-xs"
                                                             >
                                                                 Remove
@@ -472,7 +529,9 @@ function ConfigurationTab({ companyId }: { companyId: string }) {
                                     {accountSaving ? 'Saving...' : 'Save Changes'}
                                 </button>
                                 {accountSaveMsg && (
-                                    <span className={`text-sm ${accountSaveMsg.startsWith('Error') ? 'text-red-600' : 'text-green-600'}`}>
+                                    <span
+                                        className={`text-sm ${accountSaveMsg.startsWith('Error') ? 'text-red-600' : 'text-green-600'}`}
+                                    >
                                         {accountSaveMsg}
                                     </span>
                                 )}
@@ -545,9 +604,7 @@ function ConfigurationTab({ companyId }: { companyId: string }) {
                                 </p>
                             </div>
                             <button
-                                onClick={() =>
-                                    setVoucherRows((prev) => [...prev, { tally: '', erp: 'Journal Entry' }])
-                                }
+                                onClick={() => setVoucherRows((prev) => [...prev, { tally: '', erp: 'Journal Entry' }])}
                                 className="px-3 py-1.5 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                             >
                                 + Add Row
@@ -679,10 +736,7 @@ function ConfigurationTab({ companyId }: { companyId: string }) {
                                             const currentVal = godownEdits[g.tallyGodown] ?? ''
                                             const isMapped = currentVal.trim().length > 0
                                             return (
-                                                <tr
-                                                    key={g.tallyGodown}
-                                                    className={isMapped ? '' : 'bg-amber-50'}
-                                                >
+                                                <tr key={g.tallyGodown} className={isMapped ? '' : 'bg-amber-50'}>
                                                     <td className="px-4 py-2 text-sm text-gray-800 font-medium">
                                                         {g.tallyGodown}
                                                         {!isMapped && (
@@ -740,15 +794,7 @@ function ConfigurationTab({ companyId }: { companyId: string }) {
 // Inline exception row with fix actions (Task 2)
 // ---------------------------------------------------------------------------
 
-function ExceptionRow({
-    exc,
-    companyId,
-    onResolved,
-}: {
-    exc: Exception
-    companyId: string
-    onResolved: () => void
-}) {
+function ExceptionRow({ exc, companyId, onResolved }: { exc: Exception; companyId: string; onResolved: () => void }) {
     const [mapAccount, setMapAccount] = useState('')
     const [saving, setSaving] = useState(false)
     const [retrying, setRetrying] = useState(false)
@@ -759,10 +805,22 @@ function ExceptionRow({
 
     const tierBadge = (() => {
         if (exc.tier === 'TIER3_BLOCK')
-            return <span className="px-2 py-0.5 text-xs font-bold bg-red-100 text-red-800 rounded border border-red-200">Blocked</span>
+            return (
+                <span className="px-2 py-0.5 text-xs font-bold bg-red-100 text-red-800 rounded border border-red-200">
+                    Blocked
+                </span>
+            )
         if (exc.tier === 'TIER2_FLAG')
-            return <span className="px-2 py-0.5 text-xs font-bold bg-orange-100 text-orange-800 rounded border border-orange-200">Failed</span>
-        return <span className="px-2 py-0.5 text-xs font-bold bg-gray-100 text-gray-600 rounded border border-gray-200">Info</span>
+            return (
+                <span className="px-2 py-0.5 text-xs font-bold bg-orange-100 text-orange-800 rounded border border-orange-200">
+                    Failed
+                </span>
+            )
+        return (
+            <span className="px-2 py-0.5 text-xs font-bold bg-gray-100 text-gray-600 rounded border border-gray-200">
+                Info
+            </span>
+        )
     })()
 
     async function handleSaveAndRetry() {
@@ -807,14 +865,10 @@ function ExceptionRow({
                 <div className="flex items-center space-x-3 flex-wrap gap-y-1">
                     {tierBadge}
                     <span className="text-xs font-mono text-slate-600">{exc.error_code}</span>
-                    {exc.document_ref && (
-                        <span className="text-xs text-gray-400 font-mono">{exc.document_ref}</span>
-                    )}
+                    {exc.document_ref && <span className="text-xs text-gray-400 font-mono">{exc.document_ref}</span>}
                     <span className="text-xs text-gray-400">{new Date(exc.created_at).toLocaleString()}</span>
                 </div>
-                <div className="text-sm text-slate-700 bg-slate-50 p-2.5 rounded-lg border">
-                    {exc.error_message}
-                </div>
+                <div className="text-sm text-slate-700 bg-slate-50 p-2.5 rounded-lg border">{exc.error_message}</div>
 
                 {/* UNMAPPED_LEDGER: inline map input */}
                 {exc.error_code === 'UNMAPPED_LEDGER' && ledgerName && (
@@ -882,6 +936,12 @@ export default function CloudDashboard() {
     const [retryAllLoading, setRetryAllLoading] = useState(false)
     const prevSyncedRef = useRef<number>(-1)
     const syncProgressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+    // Pagination for Exceptions and Activity Log
+    const [exceptionOffset, setExceptionOffset] = useState(0)
+    const [exceptionTotal, setExceptionTotal] = useState(0)
+    const [recordOffset, setRecordOffset] = useState(0)
+    const [recordTotal, setRecordTotal] = useState(0)
+    const PAGE_SIZE = 50
 
     async function handleResetSync() {
         const mastersWarning = resetIncludeMasters
@@ -913,13 +973,27 @@ export default function CloudDashboard() {
         }
     }
 
-    async function refreshExceptions() {
+    async function refreshExceptions(offset = exceptionOffset) {
         if (!selectedCompanyId) return
         try {
-            const e = await apiFetch<{ exceptions: Exception[] }>(
-                `/dashboard/exceptions?companyId=${selectedCompanyId}`,
+            const e = await apiFetch<{ exceptions: Exception[]; total: number }>(
+                `/dashboard/exceptions?companyId=${selectedCompanyId}&limit=${PAGE_SIZE}&offset=${offset}`,
             )
             setExceptions(e.exceptions)
+            setExceptionTotal(e.total ?? 0)
+        } catch {
+            /* ignore */
+        }
+    }
+
+    async function refreshRecords(offset = recordOffset) {
+        if (!selectedCompanyId) return
+        try {
+            const r = await apiFetch<{ records: SyncRecord[]; total?: number }>(
+                `/dashboard/sync-records?companyId=${selectedCompanyId}&limit=${PAGE_SIZE}&offset=${offset}`,
+            )
+            setRecords(r.records)
+            if (r.total !== undefined) setRecordTotal(r.total)
         } catch {
             /* ignore */
         }
@@ -999,21 +1073,27 @@ export default function CloudDashboard() {
             .finally(() => setLoading(false))
     }, [])
 
-    // Load stats + records + exceptions when company changes
+    // Load stats + records + exceptions when company changes — reset pagination
     useEffect(() => {
         if (!selectedCompanyId) return
+        setExceptionOffset(0)
+        setRecordOffset(0)
         const qs = `?companyId=${selectedCompanyId}`
         Promise.all([
             apiFetch<Stats>(`/dashboard/stats${qs}`),
-            apiFetch<{ records: SyncRecord[] }>(`/dashboard/sync-records${qs}&limit=20`),
-            apiFetch<{ exceptions: Exception[] }>(`/dashboard/exceptions${qs}`),
+            apiFetch<{ records: SyncRecord[] }>(`/dashboard/sync-records${qs}&limit=${PAGE_SIZE}&offset=0`),
+            apiFetch<{ exceptions: Exception[]; total: number }>(
+                `/dashboard/exceptions${qs}&limit=${PAGE_SIZE}&offset=0`,
+            ),
         ])
             .then(([s, r, e]) => {
                 setStats(s)
                 setRecords(r.records)
                 setExceptions(e.exceptions)
+                setExceptionTotal(e.total ?? 0)
             })
             .catch((err) => setError(err.message))
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedCompanyId])
 
     // WebSocket for real-time updates
@@ -1046,13 +1126,25 @@ export default function CloudDashboard() {
             apiFetch<Stats>(`/dashboard/stats?companyId=${selectedCompanyId}`)
                 .then(setStats)
                 .catch(() => {})
-            apiFetch<{ records: SyncRecord[] }>(`/dashboard/sync-records?companyId=${selectedCompanyId}&limit=20`)
-                .then((r) => setRecords(r.records))
+            // Refresh first page of records on sync progress
+            apiFetch<{ records: SyncRecord[] }>(
+                `/dashboard/sync-records?companyId=${selectedCompanyId}&limit=${PAGE_SIZE}&offset=0`,
+            )
+                .then((r) => {
+                    setRecords(r.records)
+                    setRecordOffset(0)
+                })
                 .catch(() => {})
         }
         if (lastMessage.event === 'exception:new' && selectedCompanyId) {
-            apiFetch<{ exceptions: Exception[] }>(`/dashboard/exceptions?companyId=${selectedCompanyId}`)
-                .then((e) => setExceptions(e.exceptions))
+            apiFetch<{ exceptions: Exception[]; total: number }>(
+                `/dashboard/exceptions?companyId=${selectedCompanyId}&limit=${PAGE_SIZE}&offset=0`,
+            )
+                .then((e) => {
+                    setExceptions(e.exceptions)
+                    setExceptionTotal(e.total ?? 0)
+                    setExceptionOffset(0)
+                })
                 .catch(() => {})
         }
     }, [lastMessage, selectedCompanyId])
@@ -1108,9 +1200,7 @@ export default function CloudDashboard() {
     // Last config sync: use the selected company's heartbeat
     const selectedCompany = companies.find((c) => c.id === selectedCompanyId)
     const lastHeartbeat = selectedCompany?.last_heartbeat_at
-    const lastHeartbeatDisplay = lastHeartbeat
-        ? new Date(lastHeartbeat).toLocaleString()
-        : 'No heartbeat received'
+    const lastHeartbeatDisplay = lastHeartbeat ? new Date(lastHeartbeat).toLocaleString() : 'No heartbeat received'
 
     return (
         <div className="min-h-screen bg-neutral-100 font-sans text-neutral-900">
@@ -1404,8 +1494,7 @@ export default function CloudDashboard() {
                                                 const diff = row.tallySynced - row.erpnextCount
                                                 const erpFailed = row.erpnextCount === -1
                                                 const hasTallyCount =
-                                                    dataComparison.tallyCountsRaw != null &&
-                                                    row.tallyCount != null
+                                                    dataComparison.tallyCountsRaw != null && row.tallyCount != null
                                                 const tallyCount = row.tallyCount ?? null
                                                 const gap =
                                                     hasTallyCount && tallyCount !== null
@@ -1677,6 +1766,40 @@ export default function CloudDashboard() {
                                 ))}
                             </div>
                         )}
+
+                        {/* Pagination */}
+                        {exceptionTotal > PAGE_SIZE && (
+                            <div className="flex items-center justify-between bg-white rounded-xl shadow-sm border px-5 py-3">
+                                <span className="text-sm text-slate-500">
+                                    Showing {exceptionOffset + 1}–
+                                    {Math.min(exceptionOffset + PAGE_SIZE, exceptionTotal)} of {exceptionTotal}
+                                </span>
+                                <div className="flex gap-2">
+                                    <button
+                                        disabled={exceptionOffset === 0}
+                                        onClick={() => {
+                                            const o = Math.max(0, exceptionOffset - PAGE_SIZE)
+                                            setExceptionOffset(o)
+                                            refreshExceptions(o)
+                                        }}
+                                        className="px-3 py-1.5 text-sm rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                                    >
+                                        ← Prev
+                                    </button>
+                                    <button
+                                        disabled={exceptionOffset + PAGE_SIZE >= exceptionTotal}
+                                        onClick={() => {
+                                            const o = exceptionOffset + PAGE_SIZE
+                                            setExceptionOffset(o)
+                                            refreshExceptions(o)
+                                        }}
+                                        className="px-3 py-1.5 text-sm rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                                    >
+                                        Next →
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -1720,6 +1843,40 @@ export default function CloudDashboard() {
                                 </table>
                             )}
                         </div>
+
+                        {/* Pagination */}
+                        {recordTotal > PAGE_SIZE && (
+                            <div className="flex items-center justify-between bg-white rounded-xl shadow-sm border px-5 py-3">
+                                <span className="text-sm text-slate-500">
+                                    Showing {recordOffset + 1}–{Math.min(recordOffset + PAGE_SIZE, recordTotal)} of{' '}
+                                    {recordTotal}
+                                </span>
+                                <div className="flex gap-2">
+                                    <button
+                                        disabled={recordOffset === 0}
+                                        onClick={() => {
+                                            const o = Math.max(0, recordOffset - PAGE_SIZE)
+                                            setRecordOffset(o)
+                                            refreshRecords(o)
+                                        }}
+                                        className="px-3 py-1.5 text-sm rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                                    >
+                                        ← Prev
+                                    </button>
+                                    <button
+                                        disabled={recordOffset + PAGE_SIZE >= recordTotal}
+                                        onClick={() => {
+                                            const o = recordOffset + PAGE_SIZE
+                                            setRecordOffset(o)
+                                            refreshRecords(o)
+                                        }}
+                                        className="px-3 py-1.5 text-sm rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                                    >
+                                        Next →
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -1796,8 +1953,7 @@ export default function CloudDashboard() {
                                         </div>
                                         {c.last_heartbeat_at && (
                                             <div className="text-xs text-gray-400 mt-0.5">
-                                                Last config sync:{' '}
-                                                {new Date(c.last_heartbeat_at).toLocaleString()}
+                                                Last config sync: {new Date(c.last_heartbeat_at).toLocaleString()}
                                             </div>
                                         )}
                                     </div>
