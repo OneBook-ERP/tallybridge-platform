@@ -293,7 +293,13 @@ async function processMasterData(
                     let erpName = ''
                     if (ledgerType === 'Customer') {
                         await erpClient.ensureCustomerGroup(group)
-                        erpName = await erpClient.ensureCustomer(name, gstin || undefined, group || undefined, guid || undefined) ?? name
+                        erpName =
+                            (await erpClient.ensureCustomer(
+                                name,
+                                gstin || undefined,
+                                group || undefined,
+                                guid || undefined,
+                            )) ?? name
                         if (addressLines.length > 0 || pinCode) {
                             await erpClient.ensurePartyAddress('Customer', name, {
                                 lines: addressLines,
@@ -312,7 +318,13 @@ async function processMasterData(
                         }
                     } else if (ledgerType === 'Supplier') {
                         await erpClient.ensureSupplierGroup(group)
-                        erpName = await erpClient.ensureSupplier(name, gstin || undefined, group || undefined, guid || undefined) ?? name
+                        erpName =
+                            (await erpClient.ensureSupplier(
+                                name,
+                                gstin || undefined,
+                                group || undefined,
+                                guid || undefined,
+                            )) ?? name
                         if (addressLines.length > 0 || pinCode) {
                             await erpClient.ensurePartyAddress('Supplier', name, {
                                 lines: addressLines,
