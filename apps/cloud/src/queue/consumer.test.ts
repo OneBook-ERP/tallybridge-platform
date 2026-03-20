@@ -26,7 +26,7 @@ const mockEnsureCustomerGroup = vi.fn(() => Promise.resolve())
 const mockEnsureSupplierGroup = vi.fn(() => Promise.resolve())
 const mockEnsurePartyAddress = vi.fn(() => Promise.resolve(null))
 const mockEnsurePartyContact = vi.fn(() => Promise.resolve(null))
-const mockEnsureBankGLAccount = vi.fn(() => Promise.resolve('Bank - TC'))
+const mockEnsureLeafAccount = vi.fn(() => Promise.resolve('Bank - TC'))
 const mockEnsureItem = vi.fn(() => Promise.resolve())
 const mockEnsureUOM = vi.fn(() => Promise.resolve())
 const mockEnsureItemGroup = vi.fn(() => Promise.resolve())
@@ -69,7 +69,7 @@ vi.mock('../erpnext/client', () => ({
         ensureSupplierGroup = (...a: unknown[]) => mockEnsureSupplierGroup(...a)
         ensurePartyAddress = (...a: unknown[]) => mockEnsurePartyAddress(...a)
         ensurePartyContact = (...a: unknown[]) => mockEnsurePartyContact(...a)
-        ensureBankGLAccount = (...a: unknown[]) => mockEnsureBankGLAccount(...a)
+        ensureLeafAccount = (...a: unknown[]) => mockEnsureLeafAccount(...a)
         ensureItem = (...a: unknown[]) => mockEnsureItem(...a)
         ensureUOM = (...a: unknown[]) => mockEnsureUOM(...a)
         ensureItemGroup = (...a: unknown[]) => mockEnsureItemGroup(...a)
@@ -319,7 +319,13 @@ describe('sync-jobs processor', () => {
                 ],
             },
         })
-        expect(mockEnsureBankGLAccount).toHaveBeenCalledWith('HDFC BANK', 'Covai Polymer Traders', 'CPT')
+        expect(mockEnsureLeafAccount).toHaveBeenCalledWith(
+            'HDFC BANK',
+            'Bank Accounts',
+            'Bank',
+            'Covai Polymer Traders',
+            'CPT',
+        )
         // Should update config_profiles with the bank→GL account mapping
         const queries = mockSql.mock.calls.map((c) => c[0].join('?'))
         expect(queries.some((q: string) => q.includes('config_profiles') && q.includes('account_mappings'))).toBe(true)
@@ -348,7 +354,7 @@ describe('sync-jobs processor', () => {
         expect(mockEnsureItem).toHaveBeenCalledWith('FILLER', 'KGS', '999111', 'Primary')
     })
 
-    it('classifyLedger: Duties & Taxes → Tax (no ERPNext push)', async () => {
+    it('classifyLedger: Duties & Taxes → Tax → creates leaf account', async () => {
         // Real Tally: "OUTPUT CGST" under "Duties & Taxes" group
         await capturedSyncProcessor!({
             data: {
@@ -357,16 +363,21 @@ describe('sync-jobs processor', () => {
                 records: [{ Name: 'OUTPUT CGST', Group: 'Duties & Taxes', Parent: 'Duties & Taxes' }],
             },
         })
-        // Tax ledgers are upserted but NOT pushed to ERPNext as Customer/Supplier/Bank
         expect(mockEnsureCustomer).not.toHaveBeenCalled()
         expect(mockEnsureSupplier).not.toHaveBeenCalled()
-        expect(mockEnsureBankGLAccount).not.toHaveBeenCalled()
-        // But ledger_masters INSERT should have happened
+        expect(mockEnsureLeafAccount).toHaveBeenCalledWith(
+            'OUTPUT CGST',
+            'Duties & Taxes',
+            'Tax',
+            'Covai Polymer Traders',
+            'CPT',
+        )
         const queries = mockSql.mock.calls.map((c) => c[0].join('?'))
         expect(queries.some((q: string) => q.includes('ledger_masters') && q.includes('INSERT'))).toBe(true)
+        expect(queries.some((q: string) => q.includes('config_profiles') && q.includes('account_mappings'))).toBe(true)
     })
 
-    it('classifyLedger: Direct Expenses → Expense (no ERPNext push)', async () => {
+    it('classifyLedger: Indirect Expenses → Expense → creates leaf account', async () => {
         // Real Tally: "OFFICE RENT" under "Indirect Expenses"
         await capturedSyncProcessor!({
             data: {
@@ -377,9 +388,16 @@ describe('sync-jobs processor', () => {
         })
         expect(mockEnsureCustomer).not.toHaveBeenCalled()
         expect(mockEnsureSupplier).not.toHaveBeenCalled()
+        expect(mockEnsureLeafAccount).toHaveBeenCalledWith(
+            'OFFICE RENT',
+            'Indirect Expenses',
+            'Expense',
+            'Covai Polymer Traders',
+            'CPT',
+        )
     })
 
-    it('classifyLedger: Sales Accounts → Income (no ERPNext push)', async () => {
+    it('classifyLedger: Sales Accounts → Income → creates leaf account', async () => {
         // Real Tally: "B2B SALES" under "Sales Accounts"
         await capturedSyncProcessor!({
             data: {
@@ -390,9 +408,16 @@ describe('sync-jobs processor', () => {
         })
         expect(mockEnsureCustomer).not.toHaveBeenCalled()
         expect(mockEnsureSupplier).not.toHaveBeenCalled()
+        expect(mockEnsureLeafAccount).toHaveBeenCalledWith(
+            'B2B SALES',
+            'Sales Accounts',
+            'Income',
+            'Covai Polymer Traders',
+            'CPT',
+        )
     })
 
-    it('classifyLedger: unknown group → Other', async () => {
+    it('classifyLedger: unknown group → Other → creates leaf account', async () => {
         await capturedSyncProcessor!({
             data: {
                 companyId: CID,
@@ -400,10 +425,15 @@ describe('sync-jobs processor', () => {
                 records: [{ Name: 'MISC LEDGER', Group: 'Miscellaneous', Parent: 'Miscellaneous' }],
             },
         })
-        // "Other" type — no ERPNext master push
         expect(mockEnsureCustomer).not.toHaveBeenCalled()
         expect(mockEnsureSupplier).not.toHaveBeenCalled()
-        expect(mockEnsureBankGLAccount).not.toHaveBeenCalled()
+        expect(mockEnsureLeafAccount).toHaveBeenCalledWith(
+            'MISC LEDGER',
+            'Miscellaneous',
+            'Other',
+            'Covai Polymer Traders',
+            'CPT',
+        )
     })
 
     it('sorts vouchers: Purchase → Sales → Payment', async () => {

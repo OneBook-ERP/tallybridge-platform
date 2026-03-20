@@ -73,6 +73,74 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
         }
     })
 
+    // GET /dashboard/master-status?companyId=... — master sync status summary
+    app.get<{ Querystring: { companyId?: string } }>('/dashboard/master-status', async (req) => {
+        const identity = (req as AuthedRequest).adminIdentity
+        const companyId = scopeCompany(identity, req.query.companyId)
+
+        const whereClause = companyId
+            ? sql`WHERE company_id = ${companyId}`
+            : identity.companyIds.length > 0
+              ? sql`WHERE company_id = ANY(${identity.companyIds})`
+              : sql``
+
+        // Ledger summary
+        const ledgerSummary = await sql`
+            SELECT sync_status, ledger_type, COUNT(*)::int AS count
+            FROM ledger_masters ${whereClause}
+            GROUP BY sync_status, ledger_type ORDER BY ledger_type
+        `
+        // Stock item summary
+        const stockSummary = await sql`
+            SELECT sync_status, COUNT(*)::int AS count
+            FROM stock_item_masters ${whereClause}
+            GROUP BY sync_status
+        `
+        // Failed ledgers (most recent 100)
+        const failedLedgers = await sql`
+            SELECT tally_name, ledger_type, error_message, synced_at
+            FROM ledger_masters
+            ${companyId ? sql`WHERE company_id = ${companyId} AND sync_status = 'failed'` : sql`WHERE sync_status = 'failed'`}
+            ORDER BY synced_at DESC LIMIT 100
+        `
+        // Failed stock items (most recent 100)
+        const failedStockItems = await sql`
+            SELECT tally_name, error_message, synced_at
+            FROM stock_item_masters
+            ${companyId ? sql`WHERE company_id = ${companyId} AND sync_status = 'failed'` : sql`WHERE sync_status = 'failed'`}
+            ORDER BY synced_at DESC LIMIT 100
+        `
+
+        // Aggregate totals
+        const ledgerTotals = { total: 0, synced: 0, failed: 0, pending: 0 }
+        const byType: Record<string, { synced: number; failed: number; pending: number }> = {}
+        for (const row of ledgerSummary) {
+            const count = Number(row.count)
+            const type = (row.ledger_type as string) || 'Other'
+            const status = row.sync_status as string
+            ledgerTotals.total += count
+            if (status === 'synced') ledgerTotals.synced += count
+            else if (status === 'failed') ledgerTotals.failed += count
+            else ledgerTotals.pending += count
+            if (!byType[type]) byType[type] = { synced: 0, failed: 0, pending: 0 }
+            if (status === 'synced') byType[type].synced += count
+            else if (status === 'failed') byType[type].failed += count
+            else byType[type].pending += count
+        }
+
+        const stockTotals = { total: 0, synced: 0, failed: 0, pending: 0 }
+        for (const row of stockSummary) {
+            const count = Number(row.count)
+            const status = row.sync_status as string
+            stockTotals.total += count
+            if (status === 'synced') stockTotals.synced += count
+            else if (status === 'failed') stockTotals.failed += count
+            else stockTotals.pending += count
+        }
+
+        return { ledgerTotals, stockTotals, byType, failedLedgers, failedStockItems }
+    })
+
     // GET /dashboard/sync-records?companyId=...&limit=50 — recent sync activity
     app.get<{ Querystring: { companyId?: string; limit?: string; offset?: string } }>(
         '/dashboard/sync-records',
@@ -414,6 +482,125 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
         return { ok: true }
     })
 
+    // GET /dashboard/erpnext-accounts?companyId=... — fetch ERPNext Chart of Accounts (leaf only)
+    app.get<{ Querystring: { companyId?: string } }>('/dashboard/erpnext-accounts', async (req) => {
+        const identity = (req as AuthedRequest).adminIdentity
+        const companyId = scopeCompany(identity, req.query.companyId)
+        if (!companyId) return { error: 'companyId is required', accounts: [] }
+
+        const [company] = await sql<
+            {
+                erpnext_company: string
+                erpnext_url: string
+                erpnext_api_key: string
+                erpnext_api_secret: string
+            }[]
+        >`SELECT erpnext_company, erpnext_url, erpnext_api_key, erpnext_api_secret
+          FROM companies WHERE id = ${companyId}`
+        if (!company?.erpnext_url) return { error: 'Company has no ERPNext credentials', accounts: [] }
+
+        const companyErpClient = new ERPNextClient({
+            baseUrl: company.erpnext_url,
+            apiKey: company.erpnext_api_key,
+            apiSecret: company.erpnext_api_secret,
+        })
+
+        try {
+            const accounts = await companyErpClient.listDocs<{
+                name: string
+                is_group: number
+                root_type: string
+                parent_account: string
+                account_type: string
+            }>(
+                'Account',
+                [['company', '=', company.erpnext_company]],
+                ['name', 'is_group', 'root_type', 'parent_account', 'account_type'],
+                'name asc',
+                0, // no limit
+            )
+            return { accounts }
+        } catch (err) {
+            logger.warn({ companyId, err }, 'Failed to fetch ERPNext accounts')
+            return { error: (err as Error).message, accounts: [] }
+        }
+    })
+
+    // POST /dashboard/reconcile-coa?companyId=... — retroactively create ERPNext leaf accounts
+    // for all ledger_masters that are not Customer/Supplier and don't yet have an account mapping.
+    app.post<{ Querystring: { companyId?: string } }>('/dashboard/reconcile-coa', async (req) => {
+        const identity = (req as AuthedRequest).adminIdentity
+        const companyId = scopeCompany(identity, req.query.companyId)
+        if (!companyId) return { error: 'companyId is required' }
+
+        // Load company credentials
+        const [company] = await sql<
+            {
+                erpnext_company: string
+                erpnext_abbr: string
+                erpnext_url: string
+                erpnext_api_key: string
+                erpnext_api_secret: string
+            }[]
+        >`SELECT erpnext_company, erpnext_abbr, erpnext_url, erpnext_api_key, erpnext_api_secret
+          FROM companies WHERE id = ${companyId}`
+        if (!company?.erpnext_url) return { error: 'Company has no ERPNext credentials' }
+
+        const companyErpClient = new ERPNextClient({
+            baseUrl: company.erpnext_url,
+            apiKey: company.erpnext_api_key,
+            apiSecret: company.erpnext_api_secret,
+        })
+        const abbr = company.erpnext_abbr ?? ''
+
+        // Load existing account mappings
+        const [profile] = await sql<{ account_mappings: Record<string, string> }[]>`
+            SELECT account_mappings FROM config_profiles WHERE company_id = ${companyId}
+        `
+        const existingMappings = profile?.account_mappings ?? {}
+
+        // Load all non-party ledgers that don't have a mapping yet
+        const ledgers = await sql<
+            { tally_name: string; tally_group: string; ledger_type: string }[]
+        >`SELECT tally_name, tally_group, ledger_type FROM ledger_masters
+          WHERE company_id = ${companyId}
+            AND ledger_type NOT IN ('Customer', 'Supplier')`
+
+        let created = 0
+        let skipped = 0
+        let failed = 0
+        const errors: string[] = []
+
+        for (const ledger of ledgers) {
+            if (existingMappings[ledger.tally_name]) {
+                skipped++
+                continue
+            }
+            try {
+                const erpAccountName = await companyErpClient.ensureLeafAccount(
+                    ledger.tally_name,
+                    ledger.tally_group || '',
+                    ledger.ledger_type,
+                    company.erpnext_company,
+                    abbr,
+                )
+                await sql`
+                    UPDATE config_profiles
+                    SET account_mappings = account_mappings || ${sql.json({ [ledger.tally_name]: erpAccountName })}
+                    WHERE company_id = ${companyId}
+                `
+                created++
+            } catch (err) {
+                failed++
+                errors.push(`${ledger.tally_name}: ${(err as Error).message}`)
+                logger.warn({ ledger: ledger.tally_name, err }, 'Reconcile COA: failed to create account')
+            }
+        }
+
+        logger.info({ companyId, created, skipped, failed }, 'Reconcile COA complete')
+        return { ok: true, created, skipped, failed, errors: errors.slice(0, 20) }
+    })
+
     app.get<{ Querystring: { companyId?: string } }>('/dashboard/data-comparison', async (req) => {
         const identity = (req as AuthedRequest).adminIdentity
         const companyId = scopeCompany(identity, req.query.companyId)
@@ -579,9 +766,10 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
                 account_mappings: Record<string, string> | null
                 gst_ledger_mappings: Record<string, string> | null
                 voucher_type_mappings: Record<string, unknown> | null
+                submit_mode: Record<string, string> | null
             }[]
         >`
-            SELECT account_mappings, gst_ledger_mappings, voucher_type_mappings
+            SELECT account_mappings, gst_ledger_mappings, voucher_type_mappings, submit_mode
             FROM config_profiles
             WHERE company_id = ${companyId}
         `
@@ -605,6 +793,7 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
             accountMappings: profile?.account_mappings ?? {},
             gstLedgerMappings: profile?.gst_ledger_mappings ?? {},
             voucherTypeMappings: profile?.voucher_type_mappings ?? {},
+            submitMode: profile?.submit_mode ?? { default: 'draft' },
             godownWarehouseMappings,
             groupDefaultMappings,
         }
@@ -617,6 +806,7 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
             accountMappings?: Record<string, string>
             gstLedgerMappings?: Record<string, string>
             voucherTypeMappings?: Record<string, unknown>
+            submitMode?: Record<string, string>
             godownWarehouseMappings?: Record<string, string>
         }
     }>('/dashboard/config', async (req, reply) => {
@@ -645,6 +835,13 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
             await sql`
                 UPDATE config_profiles
                 SET voucher_type_mappings = voucher_type_mappings || ${sql.json(body.voucherTypeMappings as Record<string, string>)}::jsonb
+                WHERE company_id = ${companyId}
+            `
+        }
+        if (body.submitMode && Object.keys(body.submitMode).length > 0) {
+            await sql`
+                UPDATE config_profiles
+                SET submit_mode = ${sql.json(body.submitMode)}::jsonb
                 WHERE company_id = ${companyId}
             `
         }

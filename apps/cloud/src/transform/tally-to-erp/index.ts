@@ -29,8 +29,24 @@ export function transformVoucher(voucher: TallyVoucher, config: CompanyConfig): 
     const vt = voucher.voucherTypeName.toLowerCase()
 
     // Use company's voucherTypeMapping first
-    const mapping = config.voucherTypeMappings[voucher.voucherTypeName]
+    const rawMapping = config.voucherTypeMappings[voucher.voucherTypeName]
+    // Handle both { erpnextDoctype: "..." } objects and plain "Sales Invoice" strings
+    const mapping = rawMapping
+        ? typeof rawMapping === 'string'
+            ? { erpnextDoctype: rawMapping as typeof rawMapping & string }
+            : rawMapping
+        : undefined
     if (mapping) {
+        // Skip: user explicitly configured this voucher type to be skipped
+        if (mapping.erpnextDoctype === 'skip') {
+            return {
+                success: false,
+                error: {
+                    code: 'IGNORED_VOUCHER',
+                    message: `Voucher type "${voucher.voucherTypeName}" is configured to skip.`,
+                },
+            }
+        }
         switch (mapping.erpnextDoctype) {
             case 'Sales Invoice':
                 return transformSales(voucher, config) as TransformResult<ERPNextDocument>

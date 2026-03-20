@@ -35,6 +35,7 @@ export function makeConfig(overrides: Partial<CompanyConfig> = {}): CompanyConfi
         voucherTypeMappings: {},
         conflictStrategy: { default: 'TALLY_WINS' },
         syncDirection: {},
+        submitMode: { default: 'submit' },
         ...overrides,
     }
 }

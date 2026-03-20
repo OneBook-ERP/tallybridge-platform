@@ -122,3 +122,60 @@ export const TALLY_GROUP_ROOT_TYPE: Record<string, 'Asset' | 'Liability' | 'Inco
 export function groupRootType(group: string): 'Asset' | 'Liability' | 'Income' | 'Expense' | 'Equity' {
     return TALLY_GROUP_ROOT_TYPE[group] ?? 'Expense'
 }
+
+/**
+ * Tally group → ERPNext parent account (group account) for creating leaf accounts.
+ * When auto-creating a ledger as an ERPNext account, the parent must be a group account.
+ * This maps Tally groups to the correct ERPNext group account name.
+ *
+ * Note: `&` in Tally becomes `and` in ERPNext account names.
+ */
+export function tallyGroupToERPNextParent(tallyGroup: string, abbr: string): string {
+    const s = abbr ? ` - ${abbr}` : ''
+    const map: Record<string, string> = {
+        // Income
+        'Sales Accounts': `Direct Income${s}`,
+        'Direct Income': `Direct Income${s}`,
+        'Indirect Income': `Indirect Income${s}`,
+        // Expenses
+        'Purchase Accounts': `Direct Expenses${s}`,
+        'Direct Expenses': `Direct Expenses${s}`,
+        'Indirect Expenses': `Indirect Expenses${s}`,
+        // Assets
+        'Bank Accounts': `Bank Accounts${s}`,
+        'Cash-in-Hand': `Cash In Hand${s}`,
+        'Fixed Assets': `Fixed Assets${s}`,
+        'Current Assets': `Current Assets${s}`,
+        'Stock-in-Hand': `Stock Assets${s}`,
+        Investments: `Investments${s}`,
+        'Loans & Advances (Asset)': `Loans and Advances (Assets)${s}`,
+        'Misc. Expenses (Asset)': `Current Assets${s}`,
+        // Liabilities
+        'Duties & Taxes': `Duties and Taxes${s}`,
+        'Current Liabilities': `Current Liabilities${s}`,
+        'Loans & Advances (Liability)': `Loans (Liabilities)${s}`,
+        Provisions: `Current Liabilities${s}`,
+        'Bank OD Accounts': `Loans (Liabilities)${s}`,
+        'Secured Loans': `Loans (Liabilities)${s}`,
+        'Unsecured Loans': `Loans (Liabilities)${s}`,
+        // Equity
+        'Capital Account': `Capital Account${s}`,
+        'Reserves & Surplus': `Reserves and Surplus${s}`,
+        'Retained Earnings': `Reserves and Surplus${s}`,
+    }
+    return map[tallyGroup] ?? `Indirect Expenses${s}`
+}
+
+/**
+ * Infer ERPNext account_type from Tally ledger type and group.
+ */
+export function inferAccountType(ledgerType: string, tallyGroup: string): string | undefined {
+    if (ledgerType === 'Bank') return 'Bank'
+    if (ledgerType === 'Cash') return 'Cash'
+    if (ledgerType === 'Tax') return 'Tax'
+    if (ledgerType === 'Income') return 'Income Account'
+    if (tallyGroup === 'Fixed Assets') return 'Fixed Asset'
+    if (tallyGroup === 'Stock-in-Hand') return 'Stock'
+    if (tallyGroup === 'Investments') return undefined
+    return undefined
+}

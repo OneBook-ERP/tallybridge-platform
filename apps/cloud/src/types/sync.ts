@@ -19,7 +19,13 @@ export interface GSTLedgerMapping {
 
 export interface VoucherTypeMapping {
     [tallyVoucherType: string]: {
-        erpnextDoctype: 'Sales Invoice' | 'Purchase Invoice' | 'Payment Entry' | 'Journal Entry' | 'Stock Entry'
+        erpnextDoctype:
+            | 'Sales Invoice'
+            | 'Purchase Invoice'
+            | 'Payment Entry'
+            | 'Journal Entry'
+            | 'Stock Entry'
+            | 'skip'
         isReturn?: boolean
         paymentType?: 'Pay' | 'Receive' | 'Internal Transfer'
         journalType?: string
@@ -55,6 +61,13 @@ export interface CompanyConfig {
     conflictStrategy: ConflictStrategy
     syncDirection: {
         [doctype: string]: 'TALLY_TO_ERP' | 'ERP_TO_TALLY' | 'BOTH'
+    }
+    /** Controls whether synced docs are auto-submitted or left as draft.
+     *  Per-doctype override: { "default": "draft", "Sales Invoice": "submit" }
+     */
+    submitMode?: {
+        default: 'submit' | 'draft'
+        [doctype: string]: 'submit' | 'draft'
     }
 }
 

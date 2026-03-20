@@ -5,6 +5,65 @@ import { useAuth } from '../../lib/auth'
 import AdminManager from './admin-manager'
 import SetupWizard from './setup-wizard'
 
+function SubmitModeToggle({ companyId }: { companyId: string }) {
+    const [mode, setMode] = useState<'draft' | 'submit'>('draft')
+    const [loading, setLoading] = useState(true)
+    const [saving, setSaving] = useState(false)
+
+    useEffect(() => {
+        apiFetch<ConfigProfile>(`/dashboard/config?companyId=${companyId}`)
+            .then((cfg) => setMode((cfg.submitMode?.default as 'draft' | 'submit') || 'draft'))
+            .catch(() => {})
+            .finally(() => setLoading(false))
+    }, [companyId])
+
+    const toggle = async (newMode: 'draft' | 'submit') => {
+        setSaving(true)
+        try {
+            await apiFetch('/dashboard/config', {
+                method: 'PATCH',
+                body: JSON.stringify({ companyId, submitMode: { default: newMode } }),
+            })
+            setMode(newMode)
+        } catch {
+            /* ignore */
+        }
+        setSaving(false)
+    }
+
+    if (loading) return <div className="text-sm text-gray-400">Loading...</div>
+
+    return (
+        <div className="flex items-center gap-3">
+            <button
+                onClick={() => toggle('draft')}
+                disabled={saving}
+                className={`px-4 py-2 rounded-lg text-sm font-medium border transition-all ${
+                    mode === 'draft'
+                        ? 'bg-amber-100 border-amber-300 text-amber-800'
+                        : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
+                }`}
+            >
+                Draft
+            </button>
+            <button
+                onClick={() => toggle('submit')}
+                disabled={saving}
+                className={`px-4 py-2 rounded-lg text-sm font-medium border transition-all ${
+                    mode === 'submit'
+                        ? 'bg-green-100 border-green-300 text-green-800'
+                        : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
+                }`}
+            >
+                Submit
+            </button>
+            <span className="text-xs text-gray-400">
+                {mode === 'draft' ? 'Documents synced as drafts — review before posting' : 'Documents auto-submitted to GL on sync'}
+            </span>
+        </div>
+    )
+}
+
 interface Stats {
     synced: number
     errored: number
@@ -67,6 +126,7 @@ interface ConfigProfile {
     voucherTypeMappings: Record<string, string>
     godownWarehouseMappings: Record<string, string>
     groupDefaultMappings: Record<string, string>
+    submitMode: { default: string; [k: string]: string }
 }
 
 // Root-type classification for Tally groups — mirrors default-mappings.ts on the backend.
@@ -149,6 +209,14 @@ function ConfigurationTab({ companyId }: { companyId: string }) {
     const [godownSaveMsg, setGodownSaveMsg] = useState<string | null>(null)
     const [godownLoading, setGodownLoading] = useState(false)
 
+    // Reconcile COA state
+    const [reconciling, setReconciling] = useState(false)
+    const [reconcileResult, setReconcileResult] = useState<{ created: number; skipped: number; failed: number; errors?: string[] } | null>(null)
+
+    // ERPNext accounts for dropdown
+    const [erpAccounts, setErpAccounts] = useState<{ name: string; is_group: number; root_type: string; parent_account: string; account_type: string }[]>([])
+    const [erpAccountsLoading, setErpAccountsLoading] = useState(false)
+
     useEffect(() => {
         if (!companyId) return
         setConfigLoading(true)
@@ -196,6 +264,13 @@ function ConfigurationTab({ companyId }: { companyId: string }) {
                 }
             })
             .finally(() => setConfigLoading(false))
+
+        // Fetch ERPNext accounts for dropdowns
+        setErpAccountsLoading(true)
+        apiFetch<{ accounts: typeof erpAccounts }>(`/dashboard/erpnext-accounts?companyId=${companyId}`)
+            .then((res) => setErpAccounts(res.accounts || []))
+            .catch(() => {})
+            .finally(() => setErpAccountsLoading(false))
     }, [companyId])
 
     useEffect(() => {
@@ -288,6 +363,24 @@ function ConfigurationTab({ companyId }: { companyId: string }) {
         setGodownSaving(false)
     }
 
+    async function reconcileCOA() {
+        setReconciling(true)
+        setReconcileResult(null)
+        try {
+            const res = await apiFetch<{ created: number; skipped: number; failed: number; errors?: string[] }>(
+                `/dashboard/reconcile-coa?companyId=${companyId}`,
+                { method: 'POST' },
+            )
+            setReconcileResult(res)
+            // Reload config to show newly created mappings
+            const cfg = await apiFetch<ConfigProfile>(`/dashboard/config?companyId=${companyId}`)
+            setAccountRows(Object.entries(cfg.accountMappings || {}).map(([tally, erp]) => ({ tally, erp: erp as string })))
+        } catch (e) {
+            setReconcileResult({ created: 0, skipped: 0, failed: 1, errors: [(e instanceof Error ? e.message : String(e))] })
+        }
+        setReconciling(false)
+    }
+
     const sections = [
         { id: 'accounts', label: 'Account Mappings' },
         { id: 'gst', label: 'GST Ledgers' },
@@ -353,13 +446,35 @@ function ConfigurationTab({ companyId }: { companyId: string }) {
                                         entries override or extend defaults.
                                     </p>
                                 </div>
-                                <button
-                                    onClick={() => setAccountRows((prev) => [...prev, { tally: '', erp: '' }])}
-                                    className="shrink-0 px-3 py-1.5 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                                >
-                                    + Add Mapping
-                                </button>
+                                <div className="flex gap-2 shrink-0">
+                                    <button
+                                        onClick={reconcileCOA}
+                                        disabled={reconciling}
+                                        className="px-3 py-1.5 text-sm font-medium bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-50 transition-colors"
+                                        title="Auto-create ERPNext accounts for all Tally ledgers that don't have mappings yet"
+                                    >
+                                        {reconciling ? 'Reconciling...' : 'Reconcile COA'}
+                                    </button>
+                                    <button
+                                        onClick={() => setAccountRows((prev) => [...prev, { tally: '', erp: '' }])}
+                                        className="px-3 py-1.5 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                                    >
+                                        + Add Mapping
+                                    </button>
+                                </div>
                             </div>
+
+                            {/* Reconcile result */}
+                            {reconcileResult && (
+                                <div className={`mt-3 p-3 rounded-lg text-sm border ${reconcileResult.failed > 0 ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-green-50 border-green-200 text-green-800'}`}>
+                                    <strong>Reconcile COA:</strong> {reconcileResult.created} created, {reconcileResult.skipped} already mapped, {reconcileResult.failed} failed
+                                    {reconcileResult.errors && reconcileResult.errors.length > 0 && (
+                                        <ul className="mt-1 list-disc list-inside text-xs opacity-80">
+                                            {reconcileResult.errors.slice(0, 5).map((e, i) => <li key={i}>{e}</li>)}
+                                        </ul>
+                                    )}
+                                </div>
+                            )}
 
                             {/* Root-type filter tabs */}
                             <div className="flex gap-2 mt-4 flex-wrap">
@@ -500,19 +615,54 @@ function ConfigurationTab({ companyId }: { companyId: string }) {
                                                             />
                                                         </td>
                                                         <td className="px-4 py-2">
-                                                            <input
-                                                                type="text"
-                                                                value={row.erp}
-                                                                onChange={(e) =>
-                                                                    setAccountRows((prev) => {
-                                                                        const next = [...prev]
-                                                                        next[i] = { ...next[i], erp: e.target.value }
-                                                                        return next
-                                                                    })
-                                                                }
-                                                                placeholder="ERPNext account name"
-                                                                className="w-full px-2 py-1.5 border rounded text-sm"
-                                                            />
+                                                            {erpAccounts.length > 0 ? (
+                                                                <select
+                                                                    value={row.erp}
+                                                                    onChange={(e) =>
+                                                                        setAccountRows((prev) => {
+                                                                            const next = [...prev]
+                                                                            next[i] = { ...next[i], erp: e.target.value }
+                                                                            return next
+                                                                        })
+                                                                    }
+                                                                    className="w-full px-2 py-1.5 border rounded text-sm"
+                                                                >
+                                                                    <option value="">— select account —</option>
+                                                                    {['Asset', 'Liability', 'Expense', 'Income', 'Equity'].map((rt) => {
+                                                                        const accts = erpAccounts.filter(
+                                                                            (a) => a.root_type === rt && !a.is_group,
+                                                                        )
+                                                                        if (accts.length === 0) return null
+                                                                        return (
+                                                                            <optgroup key={rt} label={rt}>
+                                                                                {accts.map((a) => (
+                                                                                    <option key={a.name} value={a.name}>
+                                                                                        {a.name}
+                                                                                        {a.account_type ? ` [${a.account_type}]` : ''}
+                                                                                    </option>
+                                                                                ))}
+                                                                            </optgroup>
+                                                                        )
+                                                                    })}
+                                                                    <optgroup label="Special">
+                                                                        <option value="__IGNORE__">__IGNORE__ (skip this ledger)</option>
+                                                                    </optgroup>
+                                                                </select>
+                                                            ) : (
+                                                                <input
+                                                                    type="text"
+                                                                    value={row.erp}
+                                                                    onChange={(e) =>
+                                                                        setAccountRows((prev) => {
+                                                                            const next = [...prev]
+                                                                            next[i] = { ...next[i], erp: e.target.value }
+                                                                            return next
+                                                                        })
+                                                                    }
+                                                                    placeholder={erpAccountsLoading ? 'Loading accounts...' : 'ERPNext account name'}
+                                                                    className="w-full px-2 py-1.5 border rounded text-sm"
+                                                                />
+                                                            )}
                                                         </td>
                                                         <td className="px-4 py-2">
                                                             <button
@@ -605,19 +755,42 @@ function ConfigurationTab({ companyId }: { companyId: string }) {
                                                 />
                                             </td>
                                             <td className="px-4 py-2">
-                                                <input
-                                                    type="text"
-                                                    value={row.value}
-                                                    onChange={(e) =>
-                                                        setGstRows((prev) => {
-                                                            const next = [...prev]
-                                                            next[i] = { ...next[i], value: e.target.value }
-                                                            return next
-                                                        })
-                                                    }
-                                                    placeholder="ERPNext account name"
-                                                    className="w-full px-2 py-1.5 border rounded text-sm"
-                                                />
+                                                {erpAccounts.length > 0 ? (
+                                                    <select
+                                                        value={row.value}
+                                                        onChange={(e) =>
+                                                            setGstRows((prev) => {
+                                                                const next = [...prev]
+                                                                next[i] = { ...next[i], value: e.target.value }
+                                                                return next
+                                                            })
+                                                        }
+                                                        className="w-full px-2 py-1.5 border rounded text-sm"
+                                                    >
+                                                        <option value="">— select tax account —</option>
+                                                        {erpAccounts
+                                                            .filter((a) => !a.is_group && a.account_type === 'Tax')
+                                                            .map((a) => (
+                                                                <option key={a.name} value={a.name}>
+                                                                    {a.name} [{a.root_type}]
+                                                                </option>
+                                                            ))}
+                                                    </select>
+                                                ) : (
+                                                    <input
+                                                        type="text"
+                                                        value={row.value}
+                                                        onChange={(e) =>
+                                                            setGstRows((prev) => {
+                                                                const next = [...prev]
+                                                                next[i] = { ...next[i], value: e.target.value }
+                                                                return next
+                                                            })
+                                                        }
+                                                        placeholder="ERPNext account name"
+                                                        className="w-full px-2 py-1.5 border rounded text-sm"
+                                                    />
+                                                )}
                                             </td>
                                             <td className="px-4 py-2 text-center">
                                                 <button
@@ -1058,6 +1231,14 @@ export default function CloudDashboard() {
     const [excFilterCode, setExcFilterCode] = useState<string>('all')
     const [excFilterStatus, setExcFilterStatus] = useState<'open' | 'resolved' | 'all'>('open')
     const [excSort, setExcSort] = useState<'newest' | 'oldest'>('newest')
+    // Master sync status
+    const [masterStatus, setMasterStatus] = useState<{
+        ledgerTotals: { total: number; synced: number; failed: number; pending: number }
+        stockTotals: { total: number; synced: number; failed: number; pending: number }
+        byType: Record<string, { synced: number; failed: number; pending: number }>
+        failedLedgers: { tally_name: string; ledger_type: string; error_message: string; synced_at: string }[]
+        failedStockItems: { tally_name: string; error_message: string; synced_at: string }[]
+    } | null>(null)
     // Activity log filter/search/sort
     const [recSearch, setRecSearch] = useState('')
     const [recFilterStatus, setRecFilterStatus] = useState<string>('all')
@@ -1233,13 +1414,15 @@ export default function CloudDashboard() {
             apiFetch<{ exceptions: Exception[]; total: number }>(
                 `/dashboard/exceptions${qs}&limit=${PAGE_SIZE}&offset=0`,
             ),
+            apiFetch<typeof masterStatus>(`/dashboard/master-status${qs}`).catch(() => null),
         ])
-            .then(([s, r, e]) => {
+            .then(([s, r, e, ms]) => {
                 setStats(s)
                 setRecords(r.records)
                 if (r.total !== undefined) setRecordTotal(r.total)
                 setExceptions(e.exceptions)
                 setExceptionTotal(e.total ?? 0)
+                if (ms) setMasterStatus(ms)
             })
             .catch((err) => setError(err.message))
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1407,6 +1590,7 @@ export default function CloudDashboard() {
                             <div className="flex space-x-1">
                                 {[
                                     { id: 'overview', label: 'Overview' },
+                                    { id: 'masters', label: 'Masters' },
                                     { id: 'data', label: 'Data Status' },
                                     {
                                         id: 'exceptions',
@@ -1588,6 +1772,138 @@ export default function CloudDashboard() {
                                 </table>
                             )}
                         </div>
+                    </div>
+                )}
+
+                {/* -- MASTERS TAB -- */}
+                {activeTab === 'masters' && (
+                    <div className="space-y-6">
+                        <h2 className="text-lg font-semibold">Master Data Sync Status</h2>
+
+                        {!masterStatus ? (
+                            <p className="text-neutral-500">Loading master status...</p>
+                        ) : (
+                            <>
+                                {/* Summary Cards */}
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                    {[
+                                        { label: 'Total Ledgers', value: masterStatus.ledgerTotals.total, color: 'text-neutral-700' },
+                                        { label: 'Synced', value: masterStatus.ledgerTotals.synced, color: 'text-green-600' },
+                                        { label: 'Failed', value: masterStatus.ledgerTotals.failed, color: 'text-red-600' },
+                                        { label: 'Pending', value: masterStatus.ledgerTotals.pending, color: 'text-yellow-600' },
+                                    ].map((c) => (
+                                        <div key={c.label} className="bg-white rounded-lg shadow p-4">
+                                            <div className="text-sm text-neutral-500">{c.label}</div>
+                                            <div className={`text-2xl font-bold ${c.color}`}>{c.value}</div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {/* Stock Items Summary */}
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                    {[
+                                        { label: 'Total Stock Items', value: masterStatus.stockTotals.total, color: 'text-neutral-700' },
+                                        { label: 'Synced', value: masterStatus.stockTotals.synced, color: 'text-green-600' },
+                                        { label: 'Failed', value: masterStatus.stockTotals.failed, color: 'text-red-600' },
+                                        { label: 'Pending', value: masterStatus.stockTotals.pending, color: 'text-yellow-600' },
+                                    ].map((c) => (
+                                        <div key={c.label} className="bg-white rounded-lg shadow p-4">
+                                            <div className="text-sm text-neutral-500">{c.label}</div>
+                                            <div className={`text-2xl font-bold ${c.color}`}>{c.value}</div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {/* By Type Breakdown */}
+                                <div className="bg-white rounded-lg shadow overflow-hidden">
+                                    <div className="px-4 py-3 border-b font-medium">Ledgers by Type</div>
+                                    <table className="w-full text-sm">
+                                        <thead className="bg-neutral-50">
+                                            <tr>
+                                                <th className="text-left px-4 py-2">Type</th>
+                                                <th className="text-right px-4 py-2">Synced</th>
+                                                <th className="text-right px-4 py-2">Failed</th>
+                                                <th className="text-right px-4 py-2">Pending</th>
+                                                <th className="text-right px-4 py-2">Total</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {Object.entries(masterStatus.byType)
+                                                .sort(([, a], [, b]) => (b.synced + b.failed + b.pending) - (a.synced + a.failed + a.pending))
+                                                .map(([type, counts]) => (
+                                                    <tr key={type} className="border-t">
+                                                        <td className="px-4 py-2 font-medium">{type}</td>
+                                                        <td className="text-right px-4 py-2 text-green-600">{counts.synced}</td>
+                                                        <td className="text-right px-4 py-2 text-red-600">{counts.failed || '-'}</td>
+                                                        <td className="text-right px-4 py-2 text-yellow-600">{counts.pending || '-'}</td>
+                                                        <td className="text-right px-4 py-2">{counts.synced + counts.failed + counts.pending}</td>
+                                                    </tr>
+                                                ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                {/* Failed Ledgers */}
+                                {masterStatus.failedLedgers.length > 0 && (
+                                    <div className="bg-white rounded-lg shadow overflow-hidden">
+                                        <div className="px-4 py-3 border-b font-medium text-red-600">
+                                            Failed Ledgers ({masterStatus.failedLedgers.length})
+                                        </div>
+                                        <div className="max-h-96 overflow-y-auto">
+                                            <table className="w-full text-sm">
+                                                <thead className="bg-neutral-50 sticky top-0">
+                                                    <tr>
+                                                        <th className="text-left px-4 py-2">Tally Name</th>
+                                                        <th className="text-left px-4 py-2">Type</th>
+                                                        <th className="text-left px-4 py-2">Error</th>
+                                                        <th className="text-left px-4 py-2">When</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {masterStatus.failedLedgers.map((f, i) => (
+                                                        <tr key={i} className="border-t">
+                                                            <td className="px-4 py-2 font-mono text-xs">{f.tally_name}</td>
+                                                            <td className="px-4 py-2">{f.ledger_type}</td>
+                                                            <td className="px-4 py-2 text-red-500 text-xs max-w-md truncate">{f.error_message}</td>
+                                                            <td className="px-4 py-2 text-xs text-neutral-400">{new Date(f.synced_at).toLocaleString()}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Failed Stock Items */}
+                                {masterStatus.failedStockItems.length > 0 && (
+                                    <div className="bg-white rounded-lg shadow overflow-hidden">
+                                        <div className="px-4 py-3 border-b font-medium text-red-600">
+                                            Failed Stock Items ({masterStatus.failedStockItems.length})
+                                        </div>
+                                        <div className="max-h-96 overflow-y-auto">
+                                            <table className="w-full text-sm">
+                                                <thead className="bg-neutral-50 sticky top-0">
+                                                    <tr>
+                                                        <th className="text-left px-4 py-2">Tally Name</th>
+                                                        <th className="text-left px-4 py-2">Error</th>
+                                                        <th className="text-left px-4 py-2">When</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {masterStatus.failedStockItems.map((f, i) => (
+                                                        <tr key={i} className="border-t">
+                                                            <td className="px-4 py-2 font-mono text-xs">{f.tally_name}</td>
+                                                            <td className="px-4 py-2 text-red-500 text-xs max-w-md truncate">{f.error_message}</td>
+                                                            <td className="px-4 py-2 text-xs text-neutral-400">{new Date(f.synced_at).toLocaleString()}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                )}
+                            </>
+                        )}
                     </div>
                 )}
 
@@ -2242,6 +2558,20 @@ export default function CloudDashboard() {
                                 </div>
                             ))}
                         </div>
+
+                        {/* Submit Mode */}
+                        {selectedCompanyId && (
+                            <div className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
+                                <div>
+                                    <h3 className="font-semibold text-lg">Document Submit Mode</h3>
+                                    <p className="text-sm text-gray-500 mt-1">
+                                        Controls whether synced documents are created as <strong>Draft</strong> (review before posting) or <strong>Submitted</strong> (posted to GL immediately).
+                                        Draft is recommended for initial sync.
+                                    </p>
+                                </div>
+                                <SubmitModeToggle companyId={selectedCompanyId} />
+                            </div>
+                        )}
 
                         {/* Opening Stock Sync */}
                         <div className="bg-white rounded-xl shadow-sm border p-6 space-y-4">

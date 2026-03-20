@@ -29,10 +29,11 @@ async function loadConfig(companyId: string): Promise<CompanyConfigWithCreds | n
             voucher_type_mappings: Record<string, unknown>
             conflict_strategy: { default: string; perDoctype?: Record<string, string> }
             sync_direction_rules: Record<string, string>
+            submit_mode: { default: 'submit' | 'draft'; [k: string]: 'submit' | 'draft' } | null
         }[]
     >`
     SELECT account_mappings, gst_ledger_mappings, voucher_type_mappings,
-           conflict_strategy, sync_direction_rules
+           conflict_strategy, sync_direction_rules, submit_mode
     FROM config_profiles WHERE company_id = ${companyId}
   `
     if (!row) return null
@@ -116,6 +117,7 @@ async function loadConfig(companyId: string): Promise<CompanyConfigWithCreds | n
         voucherTypeMappings: (row.voucher_type_mappings ?? {}) as CompanyConfig['voucherTypeMappings'],
         conflictStrategy: (row.conflict_strategy as CompanyConfig['conflictStrategy']) ?? { default: 'TALLY_WINS' },
         syncDirection: (row.sync_direction_rules ?? {}) as CompanyConfig['syncDirection'],
+        submitMode: (row.submit_mode as CompanyConfig['submitMode']) ?? { default: 'draft' },
     }
 }
 
@@ -288,9 +290,10 @@ async function processMasterData(
 
                 // Push master to ERPNext based on type
                 try {
+                    let erpName = ''
                     if (ledgerType === 'Customer') {
                         await erpClient.ensureCustomerGroup(group)
-                        await erpClient.ensureCustomer(name, gstin || undefined, group || undefined, guid || undefined)
+                        erpName = await erpClient.ensureCustomer(name, gstin || undefined, group || undefined, guid || undefined) ?? name
                         if (addressLines.length > 0 || pinCode) {
                             await erpClient.ensurePartyAddress('Customer', name, {
                                 lines: addressLines,
@@ -309,7 +312,7 @@ async function processMasterData(
                         }
                     } else if (ledgerType === 'Supplier') {
                         await erpClient.ensureSupplierGroup(group)
-                        await erpClient.ensureSupplier(name, gstin || undefined, group || undefined, guid || undefined)
+                        erpName = await erpClient.ensureSupplier(name, gstin || undefined, group || undefined, guid || undefined) ?? name
                         if (addressLines.length > 0 || pinCode) {
                             await erpClient.ensurePartyAddress('Supplier', name, {
                                 lines: addressLines,
@@ -326,18 +329,35 @@ async function processMasterData(
                                 phone: phone || undefined,
                             })
                         }
-                    } else if (ledgerType === 'Bank' || ledgerType === 'Cash') {
-                        // Auto-create GL account in ERPNext COA and persist the mapping
-                        const erpAccountName = await erpClient.ensureBankGLAccount(name, config.erpnextCompany, abbr)
+                    } else {
+                        // All other ledger types (Bank, Cash, Expense, Income, Tax, Asset, Other)
+                        // → create as leaf account in ERPNext COA under the correct parent group
+                        erpName = await erpClient.ensureLeafAccount(
+                            name,
+                            group,
+                            ledgerType,
+                            config.erpnextCompany,
+                            abbr,
+                        )
                         // Persist mapping to config_profiles so voucher processing can resolve it
                         await sql`
                             UPDATE config_profiles
-                            SET account_mappings = account_mappings || ${sql.json({ [name]: erpAccountName })}
+                            SET account_mappings = account_mappings || ${sql.json({ [name]: erpName })}
                             WHERE company_id = ${companyId}
                         `
                     }
+                    // Mark synced
+                    await sql`
+                        UPDATE ledger_masters SET sync_status = 'synced', erpnext_name = ${erpName || name}, error_message = NULL
+                        WHERE company_id = ${companyId} AND tally_name = ${name}
+                    `
                 } catch (erpErr) {
+                    const errMsg = erpErr instanceof Error ? erpErr.message : String(erpErr)
                     logger.warn({ type, name, ledgerType, err: erpErr }, 'ERPNext master push failed — skipping')
+                    await sql`
+                        UPDATE ledger_masters SET sync_status = 'failed', error_message = ${errMsg.slice(0, 500)}
+                        WHERE company_id = ${companyId} AND tally_name = ${name}
+                    `
                 }
             } else if (type === 'stockItem') {
                 const name = (raw.Name ?? raw.name ?? raw.NAME ?? '') as string
@@ -369,8 +389,17 @@ async function processMasterData(
                     if (uom && uom !== 'Nos') await erpClient.ensureUOM(uom)
                     if (parent) await erpClient.ensureItemGroup(parent)
                     await erpClient.ensureItem(name, uom || undefined, hsn || undefined, parent || undefined)
+                    await sql`
+                        UPDATE stock_item_masters SET sync_status = 'synced', erpnext_name = ${name}, error_message = NULL
+                        WHERE company_id = ${companyId} AND tally_name = ${name}
+                    `
                 } catch (erpErr) {
+                    const errMsg = erpErr instanceof Error ? erpErr.message : String(erpErr)
                     logger.warn({ name, err: erpErr }, 'ERPNext item push failed — skipping')
+                    await sql`
+                        UPDATE stock_item_masters SET sync_status = 'failed', error_message = ${errMsg.slice(0, 500)}
+                        WHERE company_id = ${companyId} AND tally_name = ${name}
+                    `
                 }
             } else if (type === 'stockGroup') {
                 // Stock groups → ERPNext Item Groups

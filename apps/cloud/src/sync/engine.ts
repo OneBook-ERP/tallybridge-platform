@@ -20,6 +20,18 @@ import { broadcaster } from '../realtime/broadcaster'
 import { logger } from '../lib/logger'
 import type { TallyVoucher, CompanyConfig, ERPNextDocument } from '../types'
 
+/**
+ * Check whether a document should be submitted based on company config.
+ * Returns true only if submitMode for that doctype (or default) is 'submit'.
+ */
+function shouldSubmit(config: CompanyConfig, doctype: string): boolean {
+    const mode = config.submitMode
+    if (!mode) return false // default: draft
+    const perDoctype = mode[doctype]
+    if (perDoctype) return perDoctype === 'submit'
+    return mode.default === 'submit'
+}
+
 export interface SyncEngineResult {
     guid: string
     status: 'synced' | 'conflict' | 'error' | 'skipped'
@@ -426,7 +438,7 @@ export async function processTallyVoucher(voucher: TallyVoucher, config: ConfigW
                 const existing = await erpClient.getDoc<{ docstatus: number }>(doctype, existingName)
                 if (existing.docstatus === 0) {
                     logger.info({ guid, erpName: existingName, doctype }, 'Found draft — attempting submit')
-                    await erpClient.submitDoc(doctype, existingName)
+                    if (shouldSubmit(config, doctype)) await erpClient.submitDoc(doctype, existingName)
                 }
                 erpName = existingName
                 logger.info({ guid, erpName, doctype }, 'Doc already exists in ERPNext — recorded')
@@ -438,7 +450,7 @@ export async function processTallyVoucher(voucher: TallyVoucher, config: ConfigW
                 )
                 erpName = created.name
                 // Auto-submit if configured
-                await erpClient.submitDoc(doctype, erpName)
+                if (shouldSubmit(config, doctype)) await erpClient.submitDoc(doctype, erpName)
             }
         }
     } catch (err: unknown) {
@@ -461,7 +473,7 @@ export async function processTallyVoucher(voucher: TallyVoucher, config: ConfigW
                 const retryDoc = { ...docPayload, update_stock: 0, set_warehouse: undefined }
                 const created = await erpClient.createDoc<{ name: string }>(doctype, retryDoc)
                 erpName = created.name
-                await erpClient.submitDoc(doctype, erpName)
+                if (shouldSubmit(config, doctype)) await erpClient.submitDoc(doctype, erpName)
                 retrySuccess = true
             }
 
@@ -474,7 +486,7 @@ export async function processTallyVoucher(voucher: TallyVoucher, config: ConfigW
                 const retryDoc = { ...docPayload, references: [] }
                 const created = await erpClient.createDoc<{ name: string }>(doctype, retryDoc)
                 erpName = created.name
-                await erpClient.submitDoc(doctype, erpName)
+                if (shouldSubmit(config, doctype)) await erpClient.submitDoc(doctype, erpName)
                 retrySuccess = true
             }
 
@@ -489,7 +501,7 @@ export async function processTallyVoucher(voucher: TallyVoucher, config: ConfigW
                 }
                 const created = await erpClient.createDoc<{ name: string }>(doctype, retryDoc)
                 erpName = created.name
-                await erpClient.submitDoc(doctype, erpName)
+                if (shouldSubmit(config, doctype)) await erpClient.submitDoc(doctype, erpName)
                 retrySuccess = true
             }
 
@@ -503,7 +515,7 @@ export async function processTallyVoucher(voucher: TallyVoucher, config: ConfigW
                 const retryDoc = { ...docPayload, taxes }
                 const created = await erpClient.createDoc<{ name: string }>(doctype, retryDoc)
                 erpName = created.name
-                await erpClient.submitDoc(doctype, erpName)
+                if (shouldSubmit(config, doctype)) await erpClient.submitDoc(doctype, erpName)
                 retrySuccess = true
             }
 
@@ -518,7 +530,7 @@ export async function processTallyVoucher(voucher: TallyVoucher, config: ConfigW
                 const retryDoc = { ...docPayload, taxes }
                 const created = await erpClient.createDoc<{ name: string }>(doctype, retryDoc)
                 erpName = created.name
-                await erpClient.submitDoc(doctype, erpName)
+                if (shouldSubmit(config, doctype)) await erpClient.submitDoc(doctype, erpName)
                 retrySuccess = true
             }
 
@@ -534,7 +546,7 @@ export async function processTallyVoucher(voucher: TallyVoucher, config: ConfigW
                 const retryDoc = { ...docPayload, items }
                 const created = await erpClient.createDoc<{ name: string }>(doctype, retryDoc)
                 erpName = created.name
-                await erpClient.submitDoc(doctype, erpName)
+                if (shouldSubmit(config, doctype)) await erpClient.submitDoc(doctype, erpName)
                 retrySuccess = true
             }
         } catch (retryErr: unknown) {

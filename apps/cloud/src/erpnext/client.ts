@@ -706,6 +706,61 @@ export class ERPNextClient {
     }
 
     /**
+     * Ensure a leaf account exists in ERPNext COA for any Tally ledger.
+     * Uses the Tally group to determine the correct ERPNext parent group account.
+     * Returns the ERPNext account name (e.g. "Rent Paid - CPT").
+     */
+    async ensureLeafAccount(
+        ledgerName: string,
+        tallyGroup: string,
+        ledgerType: string,
+        company: string,
+        abbr: string,
+    ): Promise<string> {
+        const { tallyGroupToERPNextParent, inferAccountType } = await import('../transform/default-mappings')
+        const erpAccountName = `${ledgerName} - ${abbr}`
+        try {
+            await this.getDoc('Account', erpAccountName)
+            return erpAccountName // already exists
+        } catch (err) {
+            if (!(err instanceof ERPNextError) || err.status !== 404) throw err
+        }
+
+        const parentAccount = tallyGroupToERPNextParent(tallyGroup, abbr)
+        const accountType = inferAccountType(ledgerType, tallyGroup)
+
+        try {
+            await this.createDoc('Account', {
+                doctype: 'Account',
+                account_name: ledgerName,
+                parent_account: parentAccount,
+                account_type: accountType || undefined,
+                company,
+            })
+        } catch {
+            // Parent may not exist in this COA — fall back to Indirect Expenses
+            const fallbackParent = `Indirect Expenses - ${abbr}`
+            try {
+                await this.createDoc('Account', {
+                    doctype: 'Account',
+                    account_name: ledgerName,
+                    parent_account: fallbackParent,
+                    account_type: accountType || undefined,
+                    company,
+                })
+            } catch (innerErr) {
+                logger.warn(
+                    { ledgerName, parentAccount, fallbackParent, err: innerErr },
+                    'Failed to create leaf account',
+                )
+                throw innerErr
+            }
+        }
+        logger.info({ ledgerName, erpAccountName, parentAccount }, 'Auto-created leaf Account in ERPNext')
+        return erpAccountName
+    }
+
+    /**
      * Create a one-time opening stock reconciliation in ERPNext for all Tally stock items
      * that have opening balances. Uses Stock Reconciliation (purpose=Opening Stock).
      * Idempotent: skips if a Stock Reconciliation with remarks "__OPENING_STOCK__" already exists.
